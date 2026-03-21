@@ -4,47 +4,114 @@
       <stop offset="0%" stop-color="#0d0d1a"/>
       <stop offset="100%" stop-color="#08080f"/>
     </linearGradient>
+    <!-- Glow behind the drum -->
+    <radialGradient id="drumglow" cx="0.5" cy="0.52" r="0.25">
+      <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.12"/>
+      <stop offset="70%" stop-color="#00f0ff" stop-opacity="0.03"/>
+      <stop offset="100%" stop-color="#08080f" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Water swirl gradient -->
+    <linearGradient id="water" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#00f0ff"/>
+      <stop offset="50%" stop-color="#bf5af2"/>
+      <stop offset="100%" stop-color="#ff2d78"/>
+    </linearGradient>
   </defs>
 
   <!-- Dark background -->
   <rect width="512" height="512" rx="108" fill="url(#bg)"/>
-  <rect width="512" height="512" rx="108" fill="none" stroke="#00f0ff" stroke-width="3" stroke-opacity="0.4"/>
+  <rect width="512" height="512" rx="108" fill="none" stroke="#00f0ff" stroke-width="2.5" stroke-opacity="0.3"/>
 
-  <!-- Cat face - cyberpunk style -->
-  <!-- Ears -->
-  <polygon points="150,180 190,90 230,180" fill="none" stroke="#00f0ff" stroke-width="6" stroke-linejoin="round"/>
-  <polygon points="282,180 322,90 362,180" fill="none" stroke="#00f0ff" stroke-width="6" stroke-linejoin="round"/>
-  <!-- Inner ears -->
-  <polygon points="165,175 190,110 215,175" fill="#00f0ff" opacity="0.15"/>
-  <polygon points="297,175 322,110 347,175" fill="#00f0ff" opacity="0.15"/>
+  <!-- === THE HANGER === -->
+  <!-- Hook (elegant curved hook at the top) -->
+  <path d="M256,42 C256,42 240,42 235,55 C230,68 238,78 248,78 C255,78 256,72 256,72"
+        fill="none" stroke="#00f0ff" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
 
-  <!-- Head outline -->
-  <ellipse cx="256" cy="260" rx="130" ry="120" fill="none" stroke="#00f0ff" stroke-width="5"/>
+  <!-- Hanger arms - sweeping elegant triangle, forms the top structure -->
+  <!-- Left arm -->
+  <path d="M256,72 C245,85 200,105 148,128 C135,134 130,138 130,145"
+        fill="none" stroke="#00f0ff" stroke-width="4.5" stroke-linecap="round"/>
+  <!-- Right arm -->
+  <path d="M256,72 C267,85 312,105 364,128 C377,134 382,138 382,145"
+        fill="none" stroke="#00f0ff" stroke-width="4.5" stroke-linecap="round"/>
 
-  <!-- Eyes - glowing -->
-  <ellipse cx="210" cy="240" rx="28" ry="30" fill="#00f0ff" opacity="0.15" stroke="#00f0ff" stroke-width="3"/>
-  <ellipse cx="302" cy="240" rx="28" ry="30" fill="#00f0ff" opacity="0.15" stroke="#00f0ff" stroke-width="3"/>
-  <!-- Pupils - vertical slits -->
-  <ellipse cx="210" cy="240" rx="6" ry="22" fill="#00ff41"/>
-  <ellipse cx="302" cy="240" rx="6" ry="22" fill="#00ff41"/>
+  <!-- Hanger shoulder curves (the elegant rounded shoulders) -->
+  <path d="M130,145 C128,152 132,158 140,158"
+        fill="none" stroke="#00f0ff" stroke-width="4" stroke-linecap="round"/>
+  <path d="M382,145 C384,152 380,158 372,158"
+        fill="none" stroke="#00f0ff" stroke-width="4" stroke-linecap="round"/>
 
-  <!-- Nose -->
-  <polygon points="256,280 248,292 264,292" fill="#ff2d78"/>
+  <!-- Decorative hanger notch details -->
+  <circle cx="148" cy="128" r="2" fill="#00f0ff" opacity="0.5"/>
+  <circle cx="364" cy="128" r="2" fill="#00f0ff" opacity="0.5"/>
 
-  <!-- Mouth -->
-  <path d="M248,292 Q236,310 224,300" fill="none" stroke="#00f0ff" stroke-width="3" stroke-linecap="round"/>
-  <path d="M264,292 Q276,310 288,300" fill="none" stroke="#00f0ff" stroke-width="3" stroke-linecap="round"/>
+  <!-- === THE WASHING MACHINE === -->
+  <!-- Hangs from the hanger like a garment -->
 
-  <!-- Whiskers -->
-  <line x1="120" y1="270" x2="185" y2="280" stroke="#00f0ff" stroke-width="2.5" opacity="0.6"/>
-  <line x1="125" y1="295" x2="185" y2="290" stroke="#00f0ff" stroke-width="2.5" opacity="0.6"/>
-  <line x1="327" y1="280" x2="392" y2="270" stroke="#00f0ff" stroke-width="2.5" opacity="0.6"/>
-  <line x1="327" y1="290" x2="387" y2="295" stroke="#00f0ff" stroke-width="2.5" opacity="0.6"/>
+  <!-- Machine body (rounded rectangle, hanging below hanger) -->
+  <rect x="155" y="155" width="202" height="230" rx="28" ry="28"
+        fill="#08080f" stroke="#00f0ff" stroke-width="4"/>
+
+  <!-- Inner panel line -->
+  <rect x="170" y="170" width="172" height="200" rx="18" ry="18"
+        fill="none" stroke="#00f0ff" stroke-width="1.5" opacity="0.15"/>
+
+  <!-- Drum glow background -->
+  <circle cx="256" cy="280" r="75" fill="url(#drumglow)"/>
+
+  <!-- Drum door (the iconic circle window) -->
+  <circle cx="256" cy="280" r="72" fill="none" stroke="#00f0ff" stroke-width="4"/>
+  <circle cx="256" cy="280" r="62" fill="none" stroke="#00f0ff" stroke-width="2" opacity="0.3"/>
+
+  <!-- Water/clothes swirl inside drum - artistic spiral -->
+  <path d="M220,260 C230,240 260,235 280,250 C300,265 295,295 275,305 C255,315 230,305 225,285 C220,265 240,255 256,260"
+        fill="none" stroke="url(#water)" stroke-width="3.5" stroke-linecap="round" opacity="0.7"/>
+
+  <!-- Second swirl layer -->
+  <path d="M240,270 C248,258 268,255 278,268 C288,280 282,298 268,304 C254,310 240,300 238,288"
+        fill="none" stroke="url(#water)" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+
+  <!-- Fabric wisps floating out of drum (artsy touch - clothes becoming art) -->
+  <path d="M200,250 C185,235 175,215 180,195 C185,180 195,175 200,178"
+        fill="none" stroke="#bf5af2" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+  <path d="M312,250 C327,235 337,215 332,195 C327,180 317,175 312,178"
+        fill="none" stroke="#ff2d78" stroke-width="2" stroke-linecap="round" opacity="0.4"/>
+
+  <!-- Control panel (top section of machine) -->
+  <!-- Dial -->
+  <circle cx="195" cy="185" r="10" fill="none" stroke="#00f0ff" stroke-width="2" opacity="0.6"/>
+  <line x1="195" y1="185" x2="195" y2="177" stroke="#00f0ff" stroke-width="2" opacity="0.6" stroke-linecap="round"/>
+
+  <!-- LED dots -->
+  <circle cx="230" cy="185" r="3" fill="#00ff41" opacity="0.8"/>
+  <circle cx="242" cy="185" r="3" fill="#00ff41" opacity="0.5"/>
+  <circle cx="254" cy="185" r="3" fill="#ff8c00" opacity="0.4"/>
+
+  <!-- Power button -->
+  <circle cx="315" cy="185" r="8" fill="none" stroke="#00f0ff" stroke-width="2" opacity="0.5"/>
+  <path d="M315,179 L315,185 M311,181 C311,178 315,175 319,178"
+        fill="none" stroke="#00f0ff" stroke-width="1.5" opacity="0.5" stroke-linecap="round"/>
+
+  <!-- Door handle -->
+  <path d="M322,280 C330,280 335,276 335,272 C335,268 330,264 322,264"
+        fill="none" stroke="#00f0ff" stroke-width="2.5" opacity="0.5" stroke-linecap="round"/>
+
+  <!-- Bubbles floating up (artsy - the machine is alive) -->
+  <circle cx="175" cy="220" r="5" fill="none" stroke="#00f0ff" stroke-width="1.5" opacity="0.25"/>
+  <circle cx="165" cy="200" r="3.5" fill="none" stroke="#00f0ff" stroke-width="1" opacity="0.2"/>
+  <circle cx="340" cy="215" r="4" fill="none" stroke="#bf5af2" stroke-width="1.5" opacity="0.2"/>
+  <circle cx="350" cy="195" r="3" fill="none" stroke="#bf5af2" stroke-width="1" opacity="0.15"/>
+
+  <!-- Drip from bottom (water dripping) -->
+  <path d="M240,388 C240,395 243,400 246,400 C249,400 252,395 252,388"
+        fill="#00f0ff" fill-opacity="0.15" stroke="#00f0ff" stroke-width="1" opacity="0.3"/>
+  <path d="M260,392 C260,398 262,402 265,402 C268,402 270,398 270,392"
+        fill="#00f0ff" fill-opacity="0.1" stroke="#00f0ff" stroke-width="1" opacity="0.2"/>
 
   <!-- Five module dots -->
-  <circle cx="140" cy="420" r="12" fill="#00f0ff" opacity="0.8"/>
-  <circle cx="195" cy="420" r="12" fill="#00ff41" opacity="0.8"/>
-  <circle cx="250" cy="420" r="12" fill="#ff8c00" opacity="0.8"/>
-  <circle cx="305" cy="420" r="12" fill="#bf5af2" opacity="0.8"/>
-  <circle cx="360" cy="420" r="12" fill="#ff2d78" opacity="0.8"/>
+  <circle cx="140" cy="448" r="11" fill="#00f0ff" opacity="0.8"/>
+  <circle cx="195" cy="448" r="11" fill="#00ff41" opacity="0.8"/>
+  <circle cx="250" cy="448" r="11" fill="#ff8c00" opacity="0.8"/>
+  <circle cx="305" cy="448" r="11" fill="#bf5af2" opacity="0.8"/>
+  <circle cx="360" cy="448" r="11" fill="#ff2d78" opacity="0.8"/>
 </svg>
