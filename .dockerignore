@@ -4,3 +4,8 @@ node_modules/
 life_manager.db
 dist/
 .git/
+.env
+.claude/
+docs/
+scripts/
+spec.md

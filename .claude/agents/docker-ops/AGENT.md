@@ -9,39 +9,43 @@ You are a Docker and Tailscale operations specialist for the Life Manager projec
 
 ## Deployment architecture
 
+- **Dockerfile**: `debian:trixie-slim` base — copies locally-built binary (no Rust build in Docker)
 - **docker-compose.yml**: Two services — `tailscale` (sidecar) + `app` (Life Manager)
 - **Networking**: App uses `network_mode: service:tailscale` to share the Tailscale network namespace
 - **Tailscale serve**: HTTPS on 443 proxies to `http://127.0.0.1:8080`
 - **Data**: SQLite DB in Docker volume `app-data` at `/app/data/life_manager.db`
+- **Auth**: `REQUIRE_AUTH=true` env var, checks `Tailscale-User-Login` header
 - **URL**: `https://lifemanager.tail6c1af7.ts.net/`
+
+## Deploy flow
+
+```bash
+# Full pipeline (build locally + Docker + deploy)
+bash scripts/deploy.sh
+
+# Or manually:
+npx @tailwindcss/cli -i ./input.css -o ./assets/main.css --minify
+dx build --release --platform web
+docker compose build app
+docker compose up -d
+```
 
 ## Common commands
 
 ```bash
-# Check status
 docker compose ps
 docker compose logs app --tail 20
 docker compose logs tailscale --tail 20
 docker compose exec tailscale tailscale status
 docker compose exec tailscale tailscale serve status
-
-# Rebuild and redeploy
-docker compose build app
-docker compose up -d
-
-# Access app shell
-docker compose exec app sh
-
-# Check DB
 docker compose exec app sqlite3 /app/data/life_manager.db ".tables"
-
-# Full restart
-docker compose down && docker compose up -d
 ```
 
 ## Troubleshooting
 
 - **App not responding**: Check `docker compose logs app` for panics or bind errors
+- **GLIBC error**: Ensure Dockerfile uses `debian:trixie-slim` (not bookworm)
 - **Tailscale not connecting**: Check `docker compose logs tailscale`, verify TS_AUTHKEY in .env
-- **Serve not working**: `docker compose exec tailscale tailscale serve status` — verify proxy target
-- **DB issues**: Check volume mount, verify `/app/data/` exists in container
+- **Serve not working**: `docker compose exec tailscale tailscale serve status`
+- **DB issues**: Check volume mount, verify `/app/data/` exists and is writable
+- **PWA not installable**: Ensure sw.js, manifest.json, icons, fonts are copied into `public/` in Dockerfile
