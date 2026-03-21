@@ -1,0 +1,38 @@
+{
+  "name": "Life Manager",
+  "short_name": "LifeMgr",
+  "description": "Mobile-first PWA for managing to-dos, groceries, deliveries, watchlist, and cycle tracking.",
+  "start_url": "/lifemanager/",
+  "id": "/lifemanager/",
+  "scope": "/lifemanager/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#3b82f6",
+  "icons": [
+    {
+      "src": "/lifemanager/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/lifemanager/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/lifemanager/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/lifemanager/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

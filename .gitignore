@@ -1,0 +1,6 @@
+target/
+node_modules/
+life_manager.db
+dist/
+.env
+.claude/settings.local.json
