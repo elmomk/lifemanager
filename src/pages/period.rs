@@ -63,6 +63,46 @@ pub fn Period() -> Element {
                 }
             }
 
+            // PMS care card — shows 1-10 days before predicted period
+            if let Some(days) = countdown {
+                if days >= 1 && days <= 10 {
+                    div { class: "bg-gradient-to-br from-[#1a1028] to-[#0f1528] border border-neon-purple/30 rounded-xl p-5 glow-purple",
+                        div { class: "flex items-start gap-4",
+                            // Adorable character — a little blanket-wrapped moon
+                            div { class: "text-4xl flex-shrink-0", "\u{1F319}" }
+                            div { class: "flex-1",
+                                p { class: "text-sm font-bold text-neon-purple mb-1",
+                                    if days <= 3 {
+                                        "Almost time... be extra gentle \u{1F49C}"
+                                    } else if days <= 7 {
+                                        "Hey lovely, take it easy \u{2728}"
+                                    } else {
+                                        "Heads up, sweetheart \u{1F33C}"
+                                    }
+                                }
+                                p { class: "text-xs text-cyber-dim leading-relaxed",
+                                    if days <= 3 {
+                                        "Your period is just {days} days away. Cozy blankets, warm drinks, and extra hugs recommended. You're doing amazing."
+                                    } else if days <= 7 {
+                                        "About {days} days to go. If you're feeling a bit down or emotional, that's completely normal. Be kind to yourself \u{1F49B}"
+                                    } else {
+                                        "~{days} days until your next cycle. A good time to stock up on snacks and schedule some self-care \u{1F60A}"
+                                    }
+                                }
+                                // Self-care suggestions
+                                div { class: "flex flex-wrap gap-1.5 mt-3",
+                                    for tip in &["Hot tea \u{2615}", "Chocolate \u{1F36B}", "Warm bath \u{1F6C1}", "Rest \u{1F4A4}"] {
+                                        span { class: "text-[10px] bg-neon-purple/10 text-neon-purple/80 border border-neon-purple/20 px-2 py-1 rounded-full",
+                                            "{tip}"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Log button / form
             if *show_form.read() {
                 div { class: "bg-cyber-card/80 border border-cyber-border rounded-xl p-4 space-y-3",

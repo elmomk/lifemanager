@@ -86,6 +86,7 @@ pub fn TvIcon(class: Option<String>) -> Element {
 #[component]
 pub fn HeartIcon(class: Option<String>) -> Element {
     let class = class.unwrap_or_default();
+    // Cute flower icon — a little bloom with round petals and a center dot
     rsx! {
         svg {
             class: "{class}",
@@ -94,10 +95,21 @@ pub fn HeartIcon(class: Option<String>) -> Element {
             view_box: "0 0 24 24",
             fill: "none",
             stroke: "currentColor",
-            stroke_width: "2",
+            stroke_width: "1.8",
             stroke_linecap: "round",
             stroke_linejoin: "round",
-            path { d: "M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" }
+            // Five petals around center
+            circle { cx: "12", cy: "7.5", r: "3" }
+            circle { cx: "16.3", cy: "10.5", r: "3" }
+            circle { cx: "14.7", cy: "15.2", r: "3" }
+            circle { cx: "9.3", cy: "15.2", r: "3" }
+            circle { cx: "7.7", cy: "10.5", r: "3" }
+            // Center
+            circle { cx: "12", cy: "11.5", r: "2", fill: "currentColor", stroke: "none" }
+            // Stem
+            path { d: "M12 17v5" }
+            // Little leaf
+            path { d: "M12 19c-1.5-0.5-2.5-1.5-2.5-2.5" }
         }
     }
 }
