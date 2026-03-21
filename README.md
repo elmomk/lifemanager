@@ -12,6 +12,23 @@
 
 ---
 
+## Screenshots
+
+<div align="center">
+<table>
+<tr>
+<td align="center"><img src="docs/screenshots/todos.png" width="200"/><br/><b>To-Dos</b></td>
+<td align="center"><img src="docs/screenshots/groceries.png" width="200"/><br/><b>Groceries</b></td>
+<td align="center"><img src="docs/screenshots/shopee.png" width="200"/><br/><b>Shopee Pick-ups</b></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/watchlist.png" width="200"/><br/><b>Watchlist</b></td>
+<td align="center"><img src="docs/screenshots/period-prediction.png" width="200"/><br/><b>Cycle Tracker + PMS Care</b></td>
+<td align="center"><img src="assets/icons/icon-512.png" width="200"/><br/><b>PWA Icon</b></td>
+</tr>
+</table>
+</div>
+
 ## Features
 
 **5 modules in one app:**
@@ -20,7 +37,7 @@
 - **Groceries** — Shopping list with swipe-to-complete and dynamic defaults
 - **Shopee Pick-ups** — Package tracking with OCR-based code extraction from screenshots (Traditional Chinese + English)
 - **Watchlist** — Movie / Series / Anime / Cartoon tracker
-- **Cycle Tracker** — Period logging with symptom tracking and next-cycle prediction
+- **Cycle Tracker** — Period logging with symptom tracking, next-cycle prediction, and PMS care reminders (supportive messages 10 days before)
 
 **Key capabilities:**
 
