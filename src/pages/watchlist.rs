@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::api::watchlist as watchlist_api;
+use crate::components::error_banner::ErrorBanner;
 use crate::components::swipe_item::SwipeItem;
 use crate::models::{MediaType, WatchItem};
 
@@ -9,17 +10,18 @@ pub fn Watchlist() -> Element {
     let mut items = use_signal(Vec::<WatchItem>::new);
     let mut input_text = use_signal(String::new);
     let selected_type = use_signal(|| MediaType::Movie);
-    let mut refresh = use_signal(|| 0u32);
+    let mut error_msg = use_signal(|| Option::<String>::None);
 
-    use_effect(move || {
-        let _ = refresh();
+    let reload = move || {
         spawn(async move {
             match watchlist_api::list_watchlist().await {
                 Ok(loaded) => items.set(loaded),
-                Err(e) => tracing::error!("Failed to load watchlist: {e}"),
+                Err(e) => error_msg.set(Some(format!("Failed to load: {e}"))),
             }
         });
-    });
+    };
+
+    use_effect(move || { reload(); });
 
     let add_item = move |text: String| {
         if text.trim().is_empty() {
@@ -27,16 +29,21 @@ pub fn Watchlist() -> Element {
         }
         let media_type = selected_type.read().clone();
         spawn(async move {
-            if watchlist_api::add_watchlist(text, media_type).await.is_ok() {
-                input_text.set(String::new());
-                refresh.set(refresh() + 1);
+            match watchlist_api::add_watchlist(text, media_type).await {
+                Ok(()) => {
+                    input_text.set(String::new());
+                    reload();
+                }
+                Err(e) => error_msg.set(Some(format!("Failed to add: {e}"))),
             }
         });
     };
 
     rsx! {
         div { class: "p-4 space-y-4",
-            div { class: "bg-white/70 dark:bg-gray-800/70 backdrop-blur-lg rounded-2xl p-4 shadow-sm",
+            ErrorBanner { message: error_msg }
+
+            div { class: "bg-cyber-card/80 border border-cyber-border rounded-xl p-4",
                 form {
                     class: "space-y-3",
                     onsubmit: move |e| {
@@ -45,7 +52,7 @@ pub fn Watchlist() -> Element {
                         add_item(text);
                     },
                     input {
-                        class: "w-full bg-gray-100 dark:bg-gray-700 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500",
+                        class: "w-full bg-cyber-dark border border-cyber-border rounded-lg px-4 py-2 text-sm text-cyber-text outline-none focus:border-neon-purple/60 font-mono",
                         r#type: "text",
                         placeholder: "Add to watchlist...",
                         value: "{input_text}",
@@ -58,20 +65,23 @@ pub fn Watchlist() -> Element {
                         }
                     }
                     button {
-                        class: "w-full bg-purple-500 text-white rounded-xl px-4 py-2 text-sm font-medium hover:bg-purple-600 transition-colors",
+                        class: "w-full bg-neon-purple/20 text-neon-purple border border-neon-purple/40 rounded-lg px-4 py-2 text-xs font-bold tracking-wider uppercase hover:bg-neon-purple/30 transition-colors glow-purple",
                         r#type: "submit",
-                        "Add"
+                        "ADD"
                     }
                 }
             }
 
             div { class: "space-y-0",
                 for item in items.read().iter() {
-                    { render_item(item.clone(), refresh) }
+                    { render_item(item.clone(), reload, error_msg) }
                 }
                 if items.read().is_empty() {
-                    div { class: "text-center text-gray-400 dark:text-gray-600 py-8",
-                        p { "Nothing to watch yet" }
+                    div { class: "text-center py-12",
+                        p { class: "text-xs tracking-[0.3em] uppercase text-cyber-dim", "Nothing to watch yet" }
+                        p { class: "text-[10px] text-cyber-dim/50 mt-3 tracking-wider",
+                            "SWIPE \u{2192} WATCHED \u{2022} SWIPE \u{2190} DELETE"
+                        }
                     }
                 }
             }
@@ -83,14 +93,14 @@ fn render_type_chip(mt: MediaType, mut selected: Signal<MediaType>) -> Element {
     let is_active = *selected.read() == mt;
     let label = mt.label();
     let bg = if is_active {
-        "bg-purple-500 text-white"
+        "bg-neon-purple/30 text-neon-purple border-neon-purple/60"
     } else {
-        "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
+        "bg-cyber-dark text-cyber-dim border-cyber-border"
     };
 
     rsx! {
         button {
-            class: "flex-1 px-3 py-1.5 rounded-xl text-xs font-medium {bg} transition-colors",
+            class: "flex-1 px-4 py-2.5 rounded-lg text-xs font-medium tracking-wider uppercase border {bg} transition-colors",
             r#type: "button",
             onclick: move |_| selected.set(mt.clone()),
             "{label}"
@@ -100,14 +110,18 @@ fn render_type_chip(mt: MediaType, mut selected: Signal<MediaType>) -> Element {
 
 fn media_badge_color(mt: &MediaType) -> &'static str {
     match mt {
-        MediaType::Movie => "bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300",
-        MediaType::Series => "bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300",
-        MediaType::Anime => "bg-pink-100 dark:bg-pink-900/50 text-pink-700 dark:text-pink-300",
-        MediaType::Cartoon => "bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300",
+        MediaType::Movie => "bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/30",
+        MediaType::Series => "bg-neon-green/10 text-neon-green border border-neon-green/30",
+        MediaType::Anime => "bg-neon-pink/10 text-neon-pink border border-neon-pink/30",
+        MediaType::Cartoon => "bg-neon-yellow/10 text-neon-yellow border border-neon-yellow/30",
     }
 }
 
-fn render_item(item: WatchItem, mut refresh: Signal<u32>) -> Element {
+fn render_item(
+    item: WatchItem,
+    reload: impl Fn() + Copy + 'static,
+    mut error_msg: Signal<Option<String>>,
+) -> Element {
     let id = item.id.clone();
     let id2 = item.id.clone();
     let done = item.done;
@@ -120,16 +134,18 @@ fn render_item(item: WatchItem, mut refresh: Signal<u32>) -> Element {
             on_swipe_right: move |_| {
                 let id = id.clone();
                 spawn(async move {
-                    if watchlist_api::toggle_watchlist(id).await.is_ok() {
-                        refresh.set(refresh() + 1);
+                    match watchlist_api::toggle_watchlist(id).await {
+                        Ok(()) => reload(),
+                        Err(e) => error_msg.set(Some(format!("Failed to toggle: {e}"))),
                     }
                 });
             },
             on_swipe_left: move |_| {
                 let id = id2.clone();
                 spawn(async move {
-                    if watchlist_api::delete_watchlist(id).await.is_ok() {
-                        refresh.set(refresh() + 1);
+                    match watchlist_api::delete_watchlist(id).await {
+                        Ok(()) => reload(),
+                        Err(e) => error_msg.set(Some(format!("Failed to delete: {e}"))),
                     }
                 });
             },
@@ -137,9 +153,14 @@ fn render_item(item: WatchItem, mut refresh: Signal<u32>) -> Element {
                 div { class: "flex-1",
                     p { class: "text-sm font-medium", "{item.text}" }
                 }
-                span { class: "text-xs px-2 py-0.5 rounded-lg font-medium {badge}", "{label}" }
+                span { class: "text-[10px] px-2 py-0.5 rounded font-medium tracking-wider uppercase {badge}", "{label}" }
                 if done {
-                    span { class: "text-xs text-green-500 font-medium", "Watched" }
+                    div { class: "text-right",
+                        span { class: "text-xs text-neon-green font-bold tracking-wider", "WATCHED" }
+                        if let Some(by) = &item.completed_by {
+                            p { class: "text-[10px] text-cyber-dim", "{by}" }
+                        }
+                    }
                 }
             }
         }

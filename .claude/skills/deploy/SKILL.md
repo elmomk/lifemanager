@@ -8,23 +8,17 @@ Deploy the Life Manager application.
 
 ## Steps
 
-1. Build the Docker image:
+1. Run the deploy script:
    ```
-   docker compose build app
-   ```
-
-2. Restart the services:
-   ```
-   docker compose up -d
+   ./scripts/deploy.sh
    ```
 
-3. Verify deployment:
+2. If the script succeeds, verify with:
    ```
    docker compose logs app --tail 20
-   docker compose exec tailscale tailscale serve status
    curl -s -o /dev/null -w "%{http_code}" https://lifemanager.tail6c1af7.ts.net/
    ```
 
-4. Report the result: whether all server functions registered, Tailscale serve is active, and the app returns 200.
+3. Report the result: whether all server functions registered and the app returns 200.
 
 If any step fails, show the error logs and suggest a fix.

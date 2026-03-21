@@ -24,9 +24,9 @@ pub fn SwipeItem(
     let tx = *translate_x.read();
 
     let bg_color = if tx > 0.0 {
-        "bg-green-500"
+        "bg-neon-green/80"
     } else if tx < 0.0 {
-        "bg-red-500"
+        "bg-neon-magenta/80"
     } else {
         "bg-transparent"
     };
@@ -38,11 +38,11 @@ pub fn SwipeItem(
     };
 
     rsx! {
-        div { class: "relative overflow-hidden rounded-2xl mb-2",
+        div { class: "relative overflow-hidden rounded-lg mb-2",
             // Background action indicator
             div { class: "absolute inset-0 flex items-center justify-between px-6 {bg_color}",
                 if tx > 0.0 {
-                    CheckIcon { class: "w-6 h-6 text-white".to_string() }
+                    CheckIcon { class: "w-6 h-6 text-cyber-black".to_string() }
                 }
                 if tx < 0.0 {
                     div { class: "ml-auto",
@@ -53,7 +53,7 @@ pub fn SwipeItem(
 
             // Swipeable content
             div {
-                class: "relative bg-white dark:bg-gray-800 rounded-2xl p-4 {opacity} {line_through} {transition}",
+                class: "relative bg-cyber-card border border-cyber-border rounded-lg p-4 {opacity} {line_through} {transition}",
                 style: "transform: translateX({tx}px)",
                 ontouchstart: move |e| {
                     if let Some(touch) = e.data().touches().first() {
@@ -85,7 +85,6 @@ pub fn SwipeItem(
                             return;
                         }
 
-                        // Disable right swipe if no handler
                         if dx > 0.0 && on_swipe_right.is_none() {
                             return;
                         }

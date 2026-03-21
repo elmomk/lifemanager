@@ -6,12 +6,12 @@ use crate::models::{MediaType, WatchItem};
 pub async fn list_watchlist() -> Result<Vec<WatchItem>, ServerFnError> {
     use crate::server::{auth, db};
 
-    let user_id = auth::user_from_headers(&headers);
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let mut stmt = conn
         .prepare(
-            "SELECT id, text, media_type, done, created_at
+            "SELECT id, text, media_type, done, created_at, completed_by
              FROM watch_items
              WHERE user_id = ?1
              ORDER BY done ASC, created_at DESC",
@@ -32,6 +32,7 @@ pub async fn list_watchlist() -> Result<Vec<WatchItem>, ServerFnError> {
                 },
                 done: row.get(3)?,
                 created_at: row.get(4)?,
+                completed_by: row.get(5)?,
             })
         })
         .map_err(|e| ServerFnError::new(e.to_string()))?
@@ -43,9 +44,10 @@ pub async fn list_watchlist() -> Result<Vec<WatchItem>, ServerFnError> {
 
 #[server(headers: axum::http::HeaderMap)]
 pub async fn add_watchlist(text: String, media_type: MediaType) -> Result<(), ServerFnError> {
-    use crate::server::{auth, db};
+    use crate::server::{auth, db, validate};
 
-    let user_id = auth::user_from_headers(&headers);
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    validate::text(&text, "text")?;
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let id = uuid::Uuid::new_v4().to_string();
@@ -66,12 +68,15 @@ pub async fn add_watchlist(text: String, media_type: MediaType) -> Result<(), Se
 pub async fn toggle_watchlist(id: String) -> Result<(), ServerFnError> {
     use crate::server::{auth, db};
 
-    let user_id = auth::user_from_headers(&headers);
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    let display_name = auth::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
     conn.execute(
-        "UPDATE watch_items SET done = 1 - done WHERE id = ?1 AND user_id = ?2",
-        rusqlite::params![id, user_id],
+        "UPDATE watch_items SET done = 1 - done,
+         completed_by = CASE WHEN done = 0 THEN ?3 ELSE NULL END
+         WHERE id = ?1 AND user_id = ?2",
+        rusqlite::params![id, user_id, display_name],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -82,7 +87,7 @@ pub async fn toggle_watchlist(id: String) -> Result<(), ServerFnError> {
 pub async fn delete_watchlist(id: String) -> Result<(), ServerFnError> {
     use crate::server::{auth, db};
 
-    let user_id = auth::user_from_headers(&headers);
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
     conn.execute(

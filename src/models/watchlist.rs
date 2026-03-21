@@ -35,4 +35,5 @@ pub struct WatchItem {
     pub media_type: MediaType,
     pub done: bool,
     pub created_at: f64,
+    pub completed_by: Option<String>,
 }

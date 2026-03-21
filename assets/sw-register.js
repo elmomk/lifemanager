@@ -7,7 +7,7 @@
   if (!head.querySelector('link[rel="manifest"]')) {
     var m = document.createElement('link');
     m.rel = 'manifest';
-    m.href = '/lifemanager/manifest.json';
+    m.href = '/manifest.json';
     head.appendChild(m);
   }
 
@@ -23,7 +23,7 @@
   if (!head.querySelector('link[rel="apple-touch-icon"]')) {
     var ai = document.createElement('link');
     ai.rel = 'apple-touch-icon';
-    ai.href = '/lifemanager/icons/icon-192.png';
+    ai.href = '/icons/icon-192.png';
     head.appendChild(ai);
   }
 
@@ -47,6 +47,6 @@
 // Register service worker
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/lifemanager/sw.js', { scope: '/lifemanager/' });
+    navigator.serviceWorker.register('/sw.js', { scope: '/' });
   });
 }

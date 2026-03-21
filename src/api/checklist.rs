@@ -6,17 +6,14 @@ use crate::models::{ChecklistItem, ItemCategory};
 pub async fn list_checklist(category: ItemCategory) -> Result<Vec<ChecklistItem>, ServerFnError> {
     use crate::server::{auth, db};
 
-    let user_id = auth::user_from_headers(&headers);
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    let cat_str = match category {
-        ItemCategory::Todo => "Todo",
-        ItemCategory::Grocery => "Grocery",
-    };
+    let cat_str = category.to_string();
 
     let mut stmt = conn
         .prepare(
-            "SELECT id, text, date, done, category, created_at
+            "SELECT id, text, date, done, category, created_at, completed_by
              FROM checklist_items
              WHERE user_id = ?1 AND category = ?2
              ORDER BY done ASC, created_at DESC",
@@ -33,12 +30,9 @@ pub async fn list_checklist(category: ItemCategory) -> Result<Vec<ChecklistItem>
                     .get::<_, Option<String>>(2)?
                     .and_then(|d| chrono::NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok()),
                 done: row.get(3)?,
-                category: if cat_s == "Grocery" {
-                    ItemCategory::Grocery
-                } else {
-                    ItemCategory::Todo
-                },
+                category: cat_s.parse().unwrap_or(ItemCategory::Todo),
                 created_at: row.get(5)?,
+                completed_by: row.get(6)?,
             })
         })
         .map_err(|e| ServerFnError::new(e.to_string()))?
@@ -54,16 +48,17 @@ pub async fn add_checklist(
     category: ItemCategory,
     date: Option<String>,
 ) -> Result<(), ServerFnError> {
-    use crate::server::{auth, db};
+    use crate::server::{auth, db, validate};
 
-    let user_id = auth::user_from_headers(&headers);
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    validate::text(&text, "text")?;
+    if let Some(ref d) = date {
+        validate::date(d)?;
+    }
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let id = uuid::Uuid::new_v4().to_string();
-    let cat_str = match category {
-        ItemCategory::Todo => "Todo",
-        ItemCategory::Grocery => "Grocery",
-    };
+    let cat_str = category.to_string();
     let now = chrono::Utc::now().timestamp_millis() as f64;
 
     conn.execute(
@@ -80,12 +75,15 @@ pub async fn add_checklist(
 pub async fn toggle_checklist(id: String) -> Result<(), ServerFnError> {
     use crate::server::{auth, db};
 
-    let user_id = auth::user_from_headers(&headers);
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    let display_name = auth::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
     conn.execute(
-        "UPDATE checklist_items SET done = 1 - done WHERE id = ?1 AND user_id = ?2",
-        rusqlite::params![id, user_id],
+        "UPDATE checklist_items SET done = 1 - done,
+         completed_by = CASE WHEN done = 0 THEN ?3 ELSE NULL END
+         WHERE id = ?1 AND user_id = ?2",
+        rusqlite::params![id, user_id, display_name],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -96,7 +94,7 @@ pub async fn toggle_checklist(id: String) -> Result<(), ServerFnError> {
 pub async fn delete_checklist(id: String) -> Result<(), ServerFnError> {
     use crate::server::{auth, db};
 
-    let user_id = auth::user_from_headers(&headers);
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
     conn.execute(

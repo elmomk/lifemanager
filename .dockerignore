@@ -1,4 +1,5 @@
 target/
+!target/dx/life_manager/release/web/
 node_modules/
 life_manager.db
 dist/

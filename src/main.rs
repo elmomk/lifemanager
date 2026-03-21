@@ -21,23 +21,12 @@ fn main() {
 
 #[component]
 fn App() -> Element {
-    // Apply saved theme on load (client-only)
-    use_effect(|| {
-        document::eval(
-            r#"
-            if (localStorage.getItem('theme') === 'dark') {
-                document.documentElement.classList.add('dark');
-            }
-            "#,
-        );
-    });
-
     rsx! {
         document::Stylesheet { href: CSS }
-        document::Link { rel: "manifest", href: "/lifemanager/manifest.json" }
-        document::Link { rel: "apple-touch-icon", href: "/lifemanager/icons/icon-192.png" }
+        document::Link { rel: "manifest", href: "/manifest.json" }
+        document::Link { rel: "apple-touch-icon", href: "/icons/icon-192.png" }
         document::Meta { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" }
-        document::Meta { name: "theme-color", content: "#3b82f6" }
+        document::Meta { name: "theme-color", content: "#08080f" }
         document::Meta { name: "apple-mobile-web-app-capable", content: "yes" }
         document::Meta { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" }
 

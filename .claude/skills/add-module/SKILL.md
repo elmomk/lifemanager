@@ -19,7 +19,7 @@ Each module consists of 4 files:
 1. Read existing modules for patterns:
    - `src/models/checklist_item.rs` for model pattern
    - `src/api/checklist.rs` for server function pattern (uses `#[server(headers: axum::http::HeaderMap)]`)
-   - `src/pages/todos.rs` for page component pattern
+   - `src/components/checklist_page.rs` for reusable checklist pattern
    - `src/server/db.rs` for schema pattern
 
 2. Create all 4 files following the exact same patterns
@@ -33,10 +33,13 @@ Each module consists of 4 files:
 
 4. Add table to `src/server/db.rs` `execute_batch`
 
-5. Run `cargo check` to verify
+5. Run `./scripts/check.sh` to verify
 
 ## Key patterns
-- Server functions: `#[server(headers: axum::http::HeaderMap)]` with `auth::user_from_headers(&headers)`
-- Page data loading: `use_signal` + `use_effect` with `refresh` counter
+- Server functions: `#[server(headers: axum::http::HeaderMap)]` with `auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?`
+- Auth also provides `auth::display_name_from_headers(&headers)` for tracking who completed items
+- Page data loading: `use_signal` + `use_effect` with explicit `reload()` closure (no refresh counter)
 - Swipe right = toggle done, swipe left = delete
+- Error feedback via `ErrorBanner` component with `error_msg` signal
 - UUIDs and timestamps generated server-side
+- Cyberpunk theme: `bg-cyber-card`, `border-cyber-border`, `text-neon-*`, `glow-*` classes

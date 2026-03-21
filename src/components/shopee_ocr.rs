@@ -1,45 +1,41 @@
 use dioxus::prelude::*;
 
-use crate::api::shopee::ocr_shopee_code;
+use crate::api::shopee::ocr_shopee;
+use crate::models::OcrResult;
 
 #[component]
-pub fn ShopeeOcr(on_code_extracted: EventHandler<String>) -> Element {
+pub fn ShopeeOcr(on_results: EventHandler<Vec<OcrResult>>) -> Element {
     let mut loading = use_signal(|| false);
     let mut error_msg = use_signal(|| Option::<String>::None);
 
     let handle_file = move |_| {
         spawn(async move {
-            // Trigger file input via JS and read as base64
             let js = r#"
-                await new Promise((resolve, reject) => {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.accept = 'image/*';
-                    input.onchange = () => {
-                        const file = input.files[0];
-                        if (!file) { resolve(''); return; }
-                        const reader = new FileReader();
-                        reader.onload = () => resolve(reader.result);
-                        reader.onerror = () => reject('Failed to read file');
-                        reader.readAsDataURL(file);
-                    };
-                    input.oncancel = () => resolve('');
-                    input.click();
-                })
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = 'image/*';
+                input.onchange = () => {
+                    const file = input.files[0];
+                    if (!file) { dioxus.send(''); return; }
+                    const reader = new FileReader();
+                    reader.onload = () => dioxus.send(reader.result);
+                    reader.onerror = () => dioxus.send('');
+                    reader.readAsDataURL(file);
+                };
+                input.oncancel = () => dioxus.send('');
+                input.click();
             "#;
 
-            let result = document::eval(js).await;
-            let base64_data = match result {
-                Ok(val) => {
-                    let s: String = serde_json::from_value(val)
-                        .unwrap_or_default();
+            let mut eval = document::eval(js);
+            let base64_data = match eval.recv::<String>().await {
+                Ok(s) => {
                     if s.is_empty() {
                         return;
                     }
                     s
                 }
                 Err(e) => {
-                    error_msg.set(Some(format!("JS error: {e}")));
+                    error_msg.set(Some(format!("File read error: {e}")));
                     return;
                 }
             };
@@ -47,10 +43,10 @@ pub fn ShopeeOcr(on_code_extracted: EventHandler<String>) -> Element {
             loading.set(true);
             error_msg.set(None);
 
-            match ocr_shopee_code(base64_data).await {
-                Ok(code) => {
+            match ocr_shopee(base64_data).await {
+                Ok(results) => {
                     loading.set(false);
-                    on_code_extracted.call(code);
+                    on_results.call(results);
                 }
                 Err(e) => {
                     loading.set(false);
@@ -63,22 +59,18 @@ pub fn ShopeeOcr(on_code_extracted: EventHandler<String>) -> Element {
     rsx! {
         div { class: "flex flex-col items-center gap-1",
             button {
-                class: "flex items-center justify-center w-10 h-10 bg-orange-100 dark:bg-orange-900/50 text-orange-600 dark:text-orange-400 rounded-xl hover:bg-orange-200 dark:hover:bg-orange-800 transition-colors disabled:opacity-50",
+                class: "flex items-center justify-center w-10 h-10 bg-neon-orange/10 text-neon-orange border border-neon-orange/30 rounded-lg hover:bg-neon-orange/20 transition-colors disabled:opacity-50",
                 r#type: "button",
                 disabled: loading(),
                 onclick: handle_file,
                 if loading() {
-                    // Spinner
                     svg {
                         class: "w-5 h-5 animate-spin",
                         view_box: "0 0 24 24",
                         fill: "none",
                         circle {
-                            cx: "12",
-                            cy: "12",
-                            r: "10",
-                            stroke: "currentColor",
-                            stroke_width: "4",
+                            cx: "12", cy: "12", r: "10",
+                            stroke: "currentColor", stroke_width: "4",
                             class: "opacity-25",
                         }
                         path {
@@ -88,7 +80,6 @@ pub fn ShopeeOcr(on_code_extracted: EventHandler<String>) -> Element {
                         }
                     }
                 } else {
-                    // Camera icon
                     svg {
                         class: "w-5 h-5",
                         view_box: "0 0 24 24",
@@ -103,7 +94,7 @@ pub fn ShopeeOcr(on_code_extracted: EventHandler<String>) -> Element {
                 }
             }
             if let Some(err) = error_msg() {
-                p { class: "text-xs text-red-500 max-w-[120px] text-center", "{err}" }
+                p { class: "text-[10px] text-neon-magenta max-w-[120px] text-center font-mono", "{err}" }
             }
         }
     }
