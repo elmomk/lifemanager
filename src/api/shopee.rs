@@ -340,11 +340,12 @@ fn parse_chinese_date(text: &str, current_year: &str) -> Option<String> {
         }
     }
 
-    // Try YYYY/MM/DD or MM/DD (slash or dash separated)
-    let slash_parts: Vec<&str> = text
+    // Try YYYY-MM-DD, YYYY/MM/DD, or MM/DD (slash or dash separated)
+    // Extract leading digits from each segment (handles "28 前 , ..." → "28")
+    let slash_parts: Vec<String> = text
         .split(|c: char| c == '/' || c == '-')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
+        .map(|s| s.trim().chars().take_while(|c| c.is_ascii_digit()).collect::<String>())
+        .filter(|s| !s.is_empty())
         .collect();
 
     if slash_parts.len() >= 3 {
