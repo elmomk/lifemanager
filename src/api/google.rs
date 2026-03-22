@@ -78,7 +78,7 @@ pub async fn google_full_sync() -> Result<String, ServerFnError> {
     let mut stmt3 = conn
         .prepare(
             "SELECT id, title, due_date, google_event_id FROM shopee_packages
-             WHERE user_id = ?1 AND picked_up = 0 AND due_date IS NOT NULL"
+             WHERE user_id = ?1 AND picked_up = 0 AND due_date IS NOT NULL AND date_is_estimate = 0"
         )
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 

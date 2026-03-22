@@ -570,14 +570,16 @@ pub async fn add_shopee(
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // Fire-and-forget Google Calendar sync
-    if let Some(ref d) = due_date {
-        let id2 = id.clone();
-        let title2 = title.clone();
-        let d2 = d.clone();
-        tokio::spawn(async move {
-            crate::server::google::sync_item(&id2, &title2, Some(&d2), false, None).await;
-        });
+    // Fire-and-forget Google Calendar sync (only for firm deadlines, not estimates)
+    if !date_is_estimate {
+        if let Some(ref d) = due_date {
+            let id2 = id.clone();
+            let title2 = title.clone();
+            let d2 = d.clone();
+            tokio::spawn(async move {
+                crate::server::google::sync_item(&id2, &title2, Some(&d2), false, None).await;
+            });
+        }
     }
 
     Ok(())
@@ -605,21 +607,24 @@ pub async fn toggle_shopee(id: String) -> Result<(), ServerFnError> {
         tokio::spawn(async move {
             let conn = crate::server::db::pool().get().ok();
             if let Some(conn) = conn {
-                let item: Option<(String, Option<String>, bool, Option<String>)> = conn
+                let item: Option<(String, Option<String>, bool, Option<String>, bool)> = conn
                     .query_row(
-                        "SELECT title, due_date, picked_up, google_event_id FROM shopee_packages WHERE id = ?1",
+                        "SELECT title, due_date, picked_up, google_event_id, date_is_estimate FROM shopee_packages WHERE id = ?1",
                         rusqlite::params![id2],
-                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get::<_, i32>(4).unwrap_or(0) != 0)),
                     )
                     .ok();
-                if let Some((title, due_date, picked_up, event_id)) = item {
-                    crate::server::google::sync_item(
-                        &id2,
-                        &title,
-                        due_date.as_deref(),
-                        picked_up,
-                        event_id.as_deref(),
-                    ).await;
+                if let Some((title, due_date, picked_up, event_id, is_estimate)) = item {
+                    // Only sync firm deadlines, not estimates
+                    if !is_estimate {
+                        crate::server::google::sync_item(
+                            &id2,
+                            &title,
+                            due_date.as_deref(),
+                            picked_up,
+                            event_id.as_deref(),
+                        ).await;
+                    }
                 }
             }
         });
