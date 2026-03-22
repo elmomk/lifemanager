@@ -256,8 +256,26 @@ pub async fn sync_item(item_id: &str, title: &str, date: Option<&str>, done: boo
             );
         } else if let Some(date) = date {
             if let Some(eid) = google_event_id {
-                // Update existing event
-                update_event(eid, title, date).await?;
+                // Update existing event; if 404 (stale ID), create a new one
+                if let Err(e) = update_event(eid, title, date).await {
+                    if e.contains("404") || e.contains("Not Found") {
+                        tracing::info!("Stale event ID for {item_id}, creating new event");
+                        let event_id = create_event(title, date, item_id).await?;
+                        let conn = super::db::pool().get().map_err(|e| e.to_string())?;
+                        let affected = conn.execute(
+                            "UPDATE checklist_items SET google_event_id = ?2 WHERE id = ?1",
+                            rusqlite::params![item_id, event_id],
+                        ).map_err(|e| e.to_string())?;
+                        if affected == 0 {
+                            conn.execute(
+                                "UPDATE shopee_packages SET google_event_id = ?2 WHERE id = ?1",
+                                rusqlite::params![item_id, event_id],
+                            ).map_err(|e| e.to_string())?;
+                        }
+                    } else {
+                        return Err(e);
+                    }
+                }
             } else {
                 // Create new event
                 let event_id = create_event(title, date, item_id).await?;
