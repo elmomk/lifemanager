@@ -126,5 +126,5 @@ pub async fn google_full_sync() -> Result<String, ServerFnError> {
         google::sync_item(&id, "", None, true, Some(&event_id)).await;
     }
 
-    Ok(format!("Synced {synced}/{total} tasks, {shopee_synced}/{shopee_total} packages ({errors} errors)"))
+    Ok(format!("Synced {synced}/{total} items, {shopee_synced}/{shopee_total} packages ({errors} errors)"))
 }

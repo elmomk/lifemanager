@@ -12,9 +12,9 @@ pub fn Todos() -> Element {
         div {
             ChecklistPage {
                 category: ItemCategory::Todo,
-                placeholder: "Add a task...",
+                placeholder: "Add a to-do...",
                 initial_chips: CHIPS.iter().map(|s| s.to_string()).collect(),
-                empty_text: "No tasks yet",
+                empty_text: "No to-dos yet",
                 done_label: "DONE",
                 accent_color: "cyan",
             }
