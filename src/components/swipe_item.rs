@@ -19,8 +19,8 @@ pub fn SwipeItem(
     let mut is_horizontal = use_signal(|| false);
     let mut animating = use_signal(|| false);
 
-    let opacity = if completed { "opacity-50" } else { "" };
-    let line_through = if completed { "line-through" } else { "" };
+    let opacity = if completed { "opacity-40" } else { "" };
+    let line_through = if completed { "line-through decoration-cyber-dim/50" } else { "" };
     let tx = *translate_x.read();
 
     let bg_color = if tx > 0.0 {

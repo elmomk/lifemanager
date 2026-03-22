@@ -68,6 +68,18 @@ pub async fn add_checklist(
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Fire-and-forget Google Calendar sync
+    if category == ItemCategory::Todo {
+        if let Some(ref d) = date {
+            let id2 = id.clone();
+            let text2 = text.clone();
+            let d2 = d.clone();
+            tokio::spawn(async move {
+                crate::server::google::sync_item(&id2, &text2, Some(&d2), false, None).await;
+            });
+        }
+    }
+
     Ok(())
 }
 
@@ -87,6 +99,32 @@ pub async fn toggle_checklist(id: String) -> Result<(), ServerFnError> {
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Fire-and-forget Google Calendar sync
+    {
+        let id2 = id.clone();
+        tokio::spawn(async move {
+            let conn = crate::server::db::pool().get().ok();
+            if let Some(conn) = conn {
+                let item: Option<(String, Option<String>, bool, Option<String>)> = conn
+                    .query_row(
+                        "SELECT text, date, done, google_event_id FROM checklist_items WHERE id = ?1",
+                        rusqlite::params![id2],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                    )
+                    .ok();
+                if let Some((text, date, done, event_id)) = item {
+                    crate::server::google::sync_item(
+                        &id2,
+                        &text,
+                        date.as_deref(),
+                        done,
+                        event_id.as_deref(),
+                    ).await;
+                }
+            }
+        });
+    }
+
     Ok(())
 }
 
@@ -97,11 +135,29 @@ pub async fn delete_checklist(id: String) -> Result<(), ServerFnError> {
     let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Read google_event_id before deleting
+    let event_id: Option<String> = conn
+        .query_row(
+            "SELECT google_event_id FROM checklist_items WHERE id = ?1 AND user_id = ?2",
+            rusqlite::params![id, user_id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+
     conn.execute(
         "DELETE FROM checklist_items WHERE id = ?1 AND user_id = ?2",
         rusqlite::params![id, user_id],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // Fire-and-forget: delete Calendar event
+    if let Some(eid) = event_id {
+        let eid2 = eid.clone();
+        tokio::spawn(async move {
+            crate::server::google::sync_item("", "", None, true, Some(&eid2)).await;
+        });
+    }
 
     Ok(())
 }

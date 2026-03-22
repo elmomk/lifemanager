@@ -1,5 +1,7 @@
 use dioxus::prelude::*;
 
+use crate::cache::{self, SyncStatus};
+use crate::components::layout::SyncTrigger;
 use crate::api::checklist;
 use crate::api::defaults;
 use crate::components::error_banner::ErrorBanner;
@@ -23,12 +25,30 @@ pub fn ChecklistPage(
     let mut error_msg = use_signal(|| Option::<String>::None);
     let mut loading = use_signal(|| false);
     let seed_chips = use_signal(move || initial_chips.clone());
+    let mut sync_status: Signal<SyncStatus> = use_context();
+    let sync_trigger: Signal<SyncTrigger> = use_context();
+
+    let cache_key = match category {
+        ItemCategory::Todo => "checklist_todo",
+        ItemCategory::Grocery => "checklist_grocery",
+    };
 
     let reload = move || {
         spawn(async move {
+            sync_status.set(SyncStatus::Syncing);
             match checklist::list_checklist(category).await {
-                Ok(loaded) => items.set(loaded),
-                Err(e) => error_msg.set(Some(format!("Failed to load: {e}"))),
+                Ok(loaded) => {
+                    cache::write(cache_key, &loaded);
+                    cache::write_sync_time();
+                    items.set(loaded);
+                    sync_status.set(SyncStatus::Synced);
+                }
+                Err(e) => {
+                    if items.read().is_empty() {
+                        error_msg.set(Some(format!("Failed to load: {e}")));
+                    }
+                    sync_status.set(SyncStatus::CachedOnly);
+                }
             }
         });
     };
@@ -52,10 +72,19 @@ pub fn ChecklistPage(
         });
     };
 
-    // Load on mount
+    // Load cached data immediately, then fetch from server
     use_effect(move || {
+        if let Some(cached) = cache::read::<Vec<ChecklistItem>>(cache_key) {
+            items.set(cached);
+        }
         reload();
         reload_chips();
+    });
+
+    // Re-sync when header sync button is pressed
+    use_effect(move || {
+        let _trigger = sync_trigger.read().0;
+        reload();
     });
 
     let mut do_add = move |text: String| {
@@ -79,11 +108,11 @@ pub fn ChecklistPage(
 
     let (btn_class, input_class) = match accent_color {
         "green" => (
-            "bg-neon-green/20 text-neon-green border border-neon-green/40 rounded-lg px-4 py-2.5 text-xs font-bold tracking-wider uppercase hover:bg-neon-green/30 transition-colors glow-green disabled:opacity-50",
+            "w-full bg-neon-green/20 text-neon-green border border-neon-green/40 rounded-lg px-4 py-2.5 text-xs font-bold tracking-wider uppercase hover:bg-neon-green/30 transition-colors glow-green disabled:opacity-50",
             "w-full bg-cyber-dark border border-cyber-border rounded-lg px-4 py-2.5 text-sm text-cyber-text outline-none focus:border-neon-green/60 font-mono",
         ),
         _ => (
-            "bg-neon-cyan/20 text-neon-cyan border border-neon-cyan/40 rounded-lg px-4 py-2.5 text-xs font-bold tracking-wider uppercase hover:bg-neon-cyan/30 transition-colors glow-cyan disabled:opacity-50",
+            "w-full bg-neon-cyan/20 text-neon-cyan border border-neon-cyan/40 rounded-lg px-4 py-2.5 text-xs font-bold tracking-wider uppercase hover:bg-neon-cyan/30 transition-colors glow-cyan disabled:opacity-50",
             "w-full bg-cyber-dark border border-cyber-border rounded-lg px-4 py-2.5 text-sm text-cyber-text outline-none focus:border-neon-cyan/60 font-mono",
         ),
     };
@@ -109,40 +138,39 @@ pub fn ChecklistPage(
                         value: "{input_text}",
                         oninput: move |e| input_text.set(e.value()),
                     }
-                    // Row 2: date + ADD button
-                    div { class: "flex gap-2",
-                        input {
-                            class: "flex-1 min-w-0 bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2.5 text-sm text-cyber-text font-mono",
-                            r#type: "date",
-                            value: input_date.read().as_deref().unwrap_or(""),
-                            oninput: move |e| {
-                                let v = e.value();
-                                input_date.set(if v.is_empty() { None } else { Some(v) });
-                            },
-                        }
-                        button {
-                            class: btn_class,
-                            r#type: "submit",
-                            disabled: loading(),
-                            if loading() {
-                                svg {
-                                    class: "w-4 h-4 animate-spin",
-                                    view_box: "0 0 24 24",
-                                    fill: "none",
-                                    circle {
-                                        cx: "12", cy: "12", r: "10",
-                                        stroke: "currentColor", stroke_width: "4",
-                                        class: "opacity-25",
-                                    }
-                                    path {
-                                        d: "M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z",
-                                        fill: "currentColor",
-                                        class: "opacity-75",
-                                    }
+                    // Row 2: optional date
+                    input {
+                        class: "w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2.5 text-sm text-cyber-text font-mono",
+                        r#type: "date",
+                        value: input_date.read().as_deref().unwrap_or(""),
+                        oninput: move |e| {
+                            let v = e.value();
+                            input_date.set(if v.is_empty() { None } else { Some(v) });
+                        },
+                    }
+                    // Row 3: full-width submit
+                    button {
+                        class: btn_class,
+                        r#type: "submit",
+                        disabled: loading(),
+                        if loading() {
+                            svg {
+                                class: "w-4 h-4 animate-spin mx-auto",
+                                view_box: "0 0 24 24",
+                                fill: "none",
+                                circle {
+                                    cx: "12", cy: "12", r: "10",
+                                    stroke: "currentColor", stroke_width: "4",
+                                    class: "opacity-25",
                                 }
-                            } else {
-                                "ADD"
+                                path {
+                                    d: "M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z",
+                                    fill: "currentColor",
+                                    class: "opacity-75",
+                                }
                             }
+                        } else {
+                            "ADD"
                         }
                     }
                 }
@@ -151,6 +179,7 @@ pub fn ChecklistPage(
                 div { class: "mt-3",
                     QuickAdd {
                         chips: chips.read().clone(),
+                        accent: accent_color,
                         on_select: move |text: String| {
                             do_add(text);
                         },
@@ -172,9 +201,12 @@ pub fn ChecklistPage(
                     { render_checklist_item(item.clone(), done_label, category, reload, reload_chips, error_msg) }
                 }
                 if items.read().is_empty() {
-                    div { class: "text-center py-12",
+                    div { class: "text-center py-16",
+                        p { class: "text-2xl mb-3 opacity-30",
+                            if accent_color == "green" { "\u{1F6D2}" } else { "\u{2705}" }
+                        }
                         p { class: "text-xs tracking-[0.3em] uppercase text-cyber-dim", "{empty_text}" }
-                        p { class: "text-[10px] text-cyber-dim/50 mt-3 tracking-wider",
+                        p { class: "text-[10px] text-cyber-dim/40 mt-2 tracking-wider",
                             "SWIPE \u{2192} COMPLETE \u{2022} SWIPE \u{2190} DELETE"
                         }
                     }

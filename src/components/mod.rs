@@ -6,3 +6,5 @@ pub mod icons;
 pub mod shopee_ocr;
 pub mod error_banner;
 pub mod checklist_page;
+pub mod sync_indicator;
+pub mod google_sync;

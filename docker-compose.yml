@@ -21,8 +21,11 @@ services:
       - DATABASE_PATH=/app/data/life_manager.db
       - IP=0.0.0.0
       - PORT=8080
+      - GOOGLE_SA_KEY_FILE=/app/gorilla-coach-sheets-key.json
+      - GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID:-primary}
     volumes:
       - app-data:/app/data
+      - ./gorilla-coach-sheets-key.json:/app/gorilla-coach-sheets-key.json:ro
     depends_on:
       - tailscale
     restart: unless-stopped

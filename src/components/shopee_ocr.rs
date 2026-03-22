@@ -57,7 +57,7 @@ pub fn ShopeeOcr(on_results: EventHandler<Vec<OcrResult>>) -> Element {
     };
 
     rsx! {
-        div { class: "flex flex-col items-center gap-1",
+        div { class: "shrink-0 flex flex-col items-center gap-1",
             button {
                 class: "flex items-center justify-center w-10 h-10 bg-neon-orange/10 text-neon-orange border border-neon-orange/30 rounded-lg hover:bg-neon-orange/20 transition-colors disabled:opacity-50",
                 r#type: "button",

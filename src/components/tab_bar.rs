@@ -9,7 +9,7 @@ pub fn TabBar() -> Element {
 
     let tabs: Vec<(Route, &str, Element)> = vec![
         (Route::Todos {}, "Todos", rsx! { CheckSquareIcon { class: "w-5 h-5".to_string() } }),
-        (Route::Groceries {}, "Groc", rsx! { ShoppingCartIcon { class: "w-5 h-5".to_string() } }),
+        (Route::Groceries {}, "Shop", rsx! { ShoppingCartIcon { class: "w-5 h-5".to_string() } }),
         (Route::Shopee {}, "Shopee", rsx! { PackageIcon { class: "w-5 h-5".to_string() } }),
         (Route::Watchlist {}, "Watch", rsx! { TvIcon { class: "w-5 h-5".to_string() } }),
         (Route::Period {}, "Cycle", rsx! { HeartIcon { class: "w-5 h-5".to_string() } }),

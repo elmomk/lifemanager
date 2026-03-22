@@ -1,5 +1,7 @@
 use dioxus::prelude::*;
 
+use crate::cache::{self, SyncStatus};
+use crate::components::layout::SyncTrigger;
 use crate::api::watchlist as watchlist_api;
 use crate::components::error_banner::ErrorBanner;
 use crate::components::swipe_item::SwipeItem;
@@ -11,17 +13,40 @@ pub fn Watchlist() -> Element {
     let mut input_text = use_signal(String::new);
     let selected_type = use_signal(|| MediaType::Movie);
     let mut error_msg = use_signal(|| Option::<String>::None);
+    let mut sync_status: Signal<SyncStatus> = use_context();
+    let sync_trigger: Signal<SyncTrigger> = use_context();
 
     let reload = move || {
         spawn(async move {
+            sync_status.set(SyncStatus::Syncing);
             match watchlist_api::list_watchlist().await {
-                Ok(loaded) => items.set(loaded),
-                Err(e) => error_msg.set(Some(format!("Failed to load: {e}"))),
+                Ok(loaded) => {
+                    cache::write("watchlist", &loaded);
+                    cache::write_sync_time();
+                    items.set(loaded);
+                    sync_status.set(SyncStatus::Synced);
+                }
+                Err(e) => {
+                    if items.read().is_empty() {
+                        error_msg.set(Some(format!("Failed to load: {e}")));
+                    }
+                    sync_status.set(SyncStatus::CachedOnly);
+                }
             }
         });
     };
 
-    use_effect(move || { reload(); });
+    use_effect(move || {
+        if let Some(cached) = cache::read::<Vec<WatchItem>>("watchlist") {
+            items.set(cached);
+        }
+        reload();
+    });
+
+    use_effect(move || {
+        let _trigger = sync_trigger.read().0;
+        reload();
+    });
 
     let add_item = move |text: String| {
         if text.trim().is_empty() {
@@ -77,9 +102,10 @@ pub fn Watchlist() -> Element {
                     { render_item(item.clone(), reload, error_msg) }
                 }
                 if items.read().is_empty() {
-                    div { class: "text-center py-12",
+                    div { class: "text-center py-16",
+                        p { class: "text-2xl mb-3 opacity-30", "\u{1F3AC}" }
                         p { class: "text-xs tracking-[0.3em] uppercase text-cyber-dim", "Nothing to watch yet" }
-                        p { class: "text-[10px] text-cyber-dim/50 mt-3 tracking-wider",
+                        p { class: "text-[10px] text-cyber-dim/40 mt-2 tracking-wider",
                             "SWIPE \u{2192} WATCHED \u{2022} SWIPE \u{2190} DELETE"
                         }
                     }

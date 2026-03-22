@@ -64,117 +64,144 @@ pub async fn ocr_shopee(image_base64: String) -> Result<Vec<OcrResult>, ServerFn
 }
 
 /// Extract multiple packages from OCR text.
-/// Splits text into sections by looking for repeated pickup-code or store patterns.
+/// Strategy: Split by store header lines, then extract fields within each section.
 #[cfg(not(target_arch = "wasm32"))]
 fn extract_packages(text: &str) -> Vec<OcrResult> {
     use crate::models::OcrResult;
 
-    // Find all pickup codes with their positions
-    let codes = extract_all_codes(text);
-    let stores = extract_all_stores(text);
-    let titles = extract_all_titles(text);
+    let lines: Vec<(usize, &str)> = line_positions(text);
 
-    if codes.is_empty() && titles.is_empty() {
-        // Single package fallback: try to extract whatever we can
-        let code = codes.into_iter().next().map(|(_, c)| c);
-        let store = stores.into_iter().next().map(|(_, s)| s);
-        let title = titles.into_iter().next().map(|(_, t)| t);
-        if code.is_some() || store.is_some() || title.is_some() {
-            return vec![OcrResult { title, store, code }];
-        }
-        return vec![];
+    // Find store header indices — lines that look like store brand names
+    // These are the delimiters between packages
+    let section_starts = find_store_headers(&lines);
+
+    if section_starts.is_empty() {
+        // Fallback: try to extract a single package from entire text
+        return extract_single_package(text).into_iter().collect();
     }
 
-    // If we have multiple codes, each code is a package
-    if codes.len() > 1 {
-        return codes.iter().map(|(pos, code)| {
-            // Find the nearest store and title that appear BEFORE this code
-            let store = stores.iter()
-                .filter(|(sp, _)| *sp < *pos)
-                .last()
-                .map(|(_, s)| s.clone());
-            let title = titles.iter()
-                .filter(|(tp, _)| *tp < *pos)
-                .last()
-                .map(|(_, t)| t.clone());
-            OcrResult {
+    let mut results = Vec::new();
+
+    for (i, &start_idx) in section_starts.iter().enumerate() {
+        let end_idx = section_starts.get(i + 1).copied().unwrap_or(lines.len());
+        let section_lines: Vec<&str> = lines[start_idx..end_idx].iter().map(|(_, l)| *l).collect();
+        let section_text = section_lines.join("\n");
+
+        let title = extract_title_from_section(&section_lines);
+        let store = extract_store_from_section(&section_lines);
+        let code = extract_code_from_section(&section_text);
+        let _delivery_status = extract_delivery_status(&section_lines);
+
+        if title.is_some() || store.is_some() || code.is_some() {
+            results.push(OcrResult {
                 title,
                 store,
-                code: Some(code.clone()),
-            }
-        }).collect();
-    }
-
-    // Single code or no code — try to match by titles
-    if titles.len() > 1 && codes.len() <= 1 {
-        // Multiple products but one code — likely one package with multiple items
-        // Just return as single package
-        let code = codes.into_iter().next().map(|(_, c)| c);
-        let store = stores.into_iter().next().map(|(_, s)| s);
-        let title_strs: Vec<String> = titles.iter().map(|(_, t)| t.clone()).collect();
-        return vec![OcrResult {
-            title: Some(title_strs.join(" + ")),
-            store,
-            code,
-        }];
-    }
-
-    // Single package
-    let code = codes.into_iter().next().map(|(_, c)| c);
-    let store = stores.into_iter().next().map(|(_, s)| s);
-    let title = titles.into_iter().next().map(|(_, t)| t);
-    if code.is_some() || store.is_some() || title.is_some() {
-        vec![OcrResult { title, store, code }]
-    } else {
-        vec![]
-    }
-}
-
-/// Returns all pickup codes with their byte position in the text.
-#[cfg(not(target_arch = "wasm32"))]
-fn extract_all_codes(text: &str) -> Vec<(usize, String)> {
-    let mut results = Vec::new();
-    let code_patterns = &["取件驗證碼", "验证码", "驗證碼", "取件码"];
-
-    for pattern in code_patterns {
-        let mut search_from = 0;
-        while let Some(pos) = text[search_from..].find(pattern) {
-            let abs_pos = search_from + pos;
-            let after = &text[abs_pos + pattern.len()..];
-            let after = after.trim_start_matches(|c: char| {
-                c == '：' || c == ':' || c == ' ' || c == '\t' || c == ',' || c == '，'
+                code, // None for packages not yet arrived
             });
-            let code: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
-            if code.len() >= 4 {
-                results.push((abs_pos, code));
-            }
-            search_from = abs_pos + pattern.len();
         }
     }
 
-    // Deduplicate by code value
-    results.dedup_by(|a, b| a.1 == b.1);
+    // Dedup: if two adjacent results have identical titles, merge them
+    results.dedup_by(|a, b| {
+        a.title.is_some() && a.title == b.title
+    });
 
-    // If no pattern-based codes found, look for standalone 6-10 digit numbers
     if results.is_empty() {
-        let mut pos = 0;
-        for segment in text.split(|c: char| !c.is_ascii_digit()) {
-            if segment.len() >= 6 && segment.len() <= 10 {
-                results.push((pos, segment.to_string()));
-            }
-            pos += segment.len() + 1;
-        }
+        // Last resort fallback
+        return extract_single_package(text).into_iter().collect();
     }
 
     results
 }
 
-/// Returns all store/location mentions with their byte position.
+/// Detect store header lines. These are brand/store name lines that start each package section.
+/// Patterns: lines with CJK + brand-like text, often followed by product lines.
+/// Heuristic: lines that DON'T match known non-header patterns and appear before product titles.
 #[cfg(not(target_arch = "wasm32"))]
-fn extract_all_stores(text: &str) -> Vec<(usize, String)> {
-    let mut results = Vec::new();
+fn find_store_headers(lines: &[(usize, &str)]) -> Vec<usize> {
+    let mut headers = Vec::new();
+    let non_header_patterns = &[
+        "待收貨", "待付款", "待出貨", "訂單", "退貨", "退款", "追蹤",
+        "取件", "驗證", "請於", "猜你", "購買", "已售出", "查看更多",
+        "預計於", "配達", "包裹", "出貨", "物流", "運送中",
+        "【", "】", "取件驗證碼", "店到店",
+    ];
+    let store_indicators = &[
+        "旗艦", "官方", "專賣", "OUTLET", "outlet", "Shop", "shop", "SHOP",
+        "Store", "store", "STORE", "旗艦店", "官方店",
+    ];
 
-    for (line_start, line) in line_positions(text) {
+    for (idx, (_, line)) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.len() < 3 { continue; }
+
+        // Skip lines that are clearly not headers
+        if non_header_patterns.iter().any(|p| trimmed.contains(p)) { continue; }
+
+        // Skip pure numeric/price lines
+        if trimmed.chars().all(|c| c.is_ascii_digit() || c == '$' || c == ',' || c == '.' || c == ' ' || c == 'x' || c == 'X') { continue; }
+
+        // A store header often contains brand-like indicators
+        let has_indicator = store_indicators.iter().any(|p| trimmed.contains(p));
+
+        // Or it's a short-medium line (store names aren't super long) with mixed CJK/ASCII
+        let char_count = trimmed.chars().count();
+        let has_cjk = trimmed.chars().any(|c| c >= '\u{4e00}' && c <= '\u{9fff}');
+        let has_ascii = trimmed.chars().any(|c| c.is_ascii_alphabetic());
+        let is_reasonable_length = char_count >= 3 && char_count <= 40;
+
+        // Check if next few lines contain a product title (【】) — confirms this is a section header
+        let next_has_product = lines[idx+1..std::cmp::min(idx+5, lines.len())]
+            .iter()
+            .any(|(_, l)| l.contains('【'));
+
+        if has_indicator && is_reasonable_length {
+            headers.push(idx);
+        } else if next_has_product && is_reasonable_length && (has_cjk || has_ascii) {
+            // If the next few lines have a product title, this line is likely a store header
+            headers.push(idx);
+        }
+    }
+
+    headers
+}
+
+/// Extract a product title from a section's lines.
+#[cfg(not(target_arch = "wasm32"))]
+fn extract_title_from_section(lines: &[&str]) -> Option<String> {
+    // First try: 【】bracket titles
+    for line in lines {
+        let trimmed = line.trim();
+        if let Some(start) = trimmed.find('【') {
+            let title = &trimmed[start..];
+            let title = title.trim_end_matches(|c: char| c == '。' || c == '.' || c == '\n');
+            if title.len() > 2 {
+                return Some(title.to_string());
+            }
+        }
+    }
+
+    // Fallback: look for product-like lines (longer text, not status/UI text)
+    let skip = &[
+        "待收貨", "待付款", "待出貨", "訂單", "退貨", "退款", "追蹤",
+        "取件", "驗證", "請於", "猜你", "購買", "蝦皮", "已售出",
+        "預計於", "配達", "查看更多", "物流", "運送中", "出貨",
+    ];
+    for line in lines.iter().skip(1) { // skip first line (store header)
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.chars().count() < 8 { continue; }
+        if skip.iter().any(|p| trimmed.contains(p)) { continue; }
+        if trimmed.chars().all(|c| c.is_ascii_digit() || c == '$' || c == ',' || c == '.' || c == ' ') { continue; }
+        return Some(trimmed.to_string());
+    }
+
+    None
+}
+
+/// Extract store/location from section lines.
+#[cfg(not(target_arch = "wasm32"))]
+fn extract_store_from_section(lines: &[&str]) -> Option<String> {
+    for line in lines {
         // Pattern: 至 ... 取件
         if let Some(start) = line.find('至') {
             let after = &line[start + '至'.len_utf8()..];
@@ -184,8 +211,7 @@ fn extract_all_stores(text: &str) -> Vec<(usize, String)> {
                     .trim_start_matches("蝦皮")
                     .trim();
                 if !store.is_empty() {
-                    results.push((line_start + start, store.to_string()));
-                    continue;
+                    return Some(store.to_string());
                 }
             }
         }
@@ -197,49 +223,63 @@ fn extract_all_stores(text: &str) -> Vec<(usize, String)> {
                 c == '。' || c == '.' || c == ',' || c == '，'
             }).trim();
             if !store.is_empty() && store.len() > 2 {
-                results.push((line_start + pos, store.to_string()));
+                return Some(store.to_string());
             }
         }
     }
-
-    results
+    None
 }
 
-/// Returns all product titles with their byte position.
+/// Extract pickup code from section text.
 #[cfg(not(target_arch = "wasm32"))]
-fn extract_all_titles(text: &str) -> Vec<(usize, String)> {
-    let mut results = Vec::new();
-    let skip_patterns = &[
-        "待收貨", "待付款", "待出貨", "訂單", "退貨", "退款", "追蹤",
-        "取件", "驗證", "請於", "猜你", "購買", "蝦皮", "已售出",
-    ];
+fn extract_code_from_section(text: &str) -> Option<String> {
+    let code_patterns = &["取件驗證碼", "验证码", "驗證碼", "取件码"];
 
-    for (line_start, line) in line_positions(text) {
-        let line = line.trim();
-        if line.is_empty() { continue; }
-
-        // Product names in 【】brackets
-        if let Some(start) = line.find('【') {
-            let title = &line[start..];
-            let title = title.trim_end_matches(|c: char| c == '。' || c == '.' || c == '\n');
-            if title.len() > 2 {
-                results.push((line_start + start, title.to_string()));
-                continue;
+    for pattern in code_patterns {
+        if let Some(pos) = text.find(pattern) {
+            let after = &text[pos + pattern.len()..];
+            let after = after.trim_start_matches(|c: char| {
+                c == '：' || c == ':' || c == ' ' || c == '\t' || c == ',' || c == '，'
+            });
+            let code: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if code.len() >= 4 {
+                return Some(code);
             }
-        }
-
-        // Product-like lines
-        if line.chars().count() < 8 { continue; }
-        if skip_patterns.iter().any(|p| line.contains(p)) { continue; }
-        if line.chars().all(|c| c.is_ascii_digit() || c == '$' || c == ',' || c == '.' || c == ' ') { continue; }
-
-        // Might be a product title — only add if we haven't already found a bracket title near this position
-        if results.iter().all(|(pos, _)| (*pos as isize - line_start as isize).unsigned_abs() > 100) {
-            results.push((line_start, line.to_string()));
         }
     }
 
-    results
+    None
+}
+
+/// Detect delivery status lines like "預計於 DATE 配達" (package not yet arrived).
+#[cfg(not(target_arch = "wasm32"))]
+fn extract_delivery_status(lines: &[&str]) -> Option<String> {
+    for line in lines {
+        if line.contains("預計於") || line.contains("預計") && line.contains("配達") {
+            return Some(line.trim().to_string());
+        }
+        if line.contains("運送中") || line.contains("出貨中") {
+            return Some(line.trim().to_string());
+        }
+    }
+    None
+}
+
+/// Fallback: try to extract a single package from the entire text.
+#[cfg(not(target_arch = "wasm32"))]
+fn extract_single_package(text: &str) -> Option<OcrResult> {
+    use crate::models::OcrResult;
+
+    let lines: Vec<&str> = text.lines().collect();
+    let title = extract_title_from_section(&lines);
+    let store = extract_store_from_section(&lines);
+    let code = extract_code_from_section(text);
+
+    if title.is_some() || store.is_some() || code.is_some() {
+        Some(OcrResult { title, store, code })
+    } else {
+        None
+    }
 }
 
 /// Helper: iterate lines with their byte offset in the original text.
@@ -249,7 +289,7 @@ fn line_positions(text: &str) -> Vec<(usize, &str)> {
     let mut pos = 0;
     for line in text.lines() {
         result.push((pos, line));
-        pos += line.len() + 1; // +1 for \n
+        pos += line.len() + 1;
     }
     result
 }
@@ -349,4 +389,65 @@ pub async fn delete_shopee(id: String) -> Result<(), ServerFnError> {
     .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     Ok(())
+}
+
+#[server(headers: axum::http::HeaderMap)]
+pub async fn update_shopee_code(id: String, code: String) -> Result<(), ServerFnError> {
+    use crate::server::{auth, db, validate};
+
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    validate::short(&code, "code")?;
+    let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    conn.execute(
+        "UPDATE shopee_packages SET code = ?3 WHERE id = ?1 AND user_id = ?2",
+        rusqlite::params![id, user_id, code],
+    )
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    Ok(())
+}
+
+#[server(headers: axum::http::HeaderMap)]
+pub async fn find_matching_packages(titles: Vec<String>) -> Result<Vec<ShopeePackage>, ServerFnError> {
+    use crate::server::{auth, db};
+
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // Find active (not picked up) packages that match any of the given titles
+    let mut results = Vec::new();
+    for title in &titles {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, store, code, picked_up, created_at, completed_by
+                 FROM shopee_packages
+                 WHERE user_id = ?1 AND picked_up = 0 AND title LIKE '%' || ?2 || '%'"
+            )
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        let items = stmt
+            .query_map(rusqlite::params![user_id, title], |row| {
+                Ok(ShopeePackage {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    store: row.get(2)?,
+                    code: row.get(3)?,
+                    picked_up: row.get(4)?,
+                    created_at: row.get(5)?,
+                    completed_by: row.get(6)?,
+                })
+            })
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        results.extend(items);
+    }
+
+    // Dedup by id
+    results.sort_by(|a, b| a.id.cmp(&b.id));
+    results.dedup_by(|a, b| a.id == b.id);
+
+    Ok(results)
 }

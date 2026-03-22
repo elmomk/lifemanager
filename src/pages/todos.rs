@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::components::checklist_page::ChecklistPage;
+use crate::components::google_sync::GoogleSyncPanel;
 use crate::models::ItemCategory;
 
 const CHIPS: &[&str] = &["Laundry", "Clean", "Pay Bills", "Exercise", "Cook", "Study"];
@@ -8,13 +9,18 @@ const CHIPS: &[&str] = &["Laundry", "Clean", "Pay Bills", "Exercise", "Cook", "S
 #[component]
 pub fn Todos() -> Element {
     rsx! {
-        ChecklistPage {
-            category: ItemCategory::Todo,
-            placeholder: "Add a task...",
-            initial_chips: CHIPS.iter().map(|s| s.to_string()).collect(),
-            empty_text: "No tasks yet",
-            done_label: "DONE",
-            accent_color: "cyan",
+        div {
+            ChecklistPage {
+                category: ItemCategory::Todo,
+                placeholder: "Add a task...",
+                initial_chips: CHIPS.iter().map(|s| s.to_string()).collect(),
+                empty_text: "No tasks yet",
+                done_label: "DONE",
+                accent_color: "cyan",
+            }
+            div { class: "px-4",
+                GoogleSyncPanel {}
+            }
         }
     }
 }

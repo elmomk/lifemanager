@@ -1,3 +1,4 @@
+mod cache;
 mod components;
 mod models;
 mod pages;

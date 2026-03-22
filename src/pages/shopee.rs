@@ -1,5 +1,7 @@
 use dioxus::prelude::*;
 
+use crate::cache::{self, SyncStatus};
+use crate::components::layout::SyncTrigger;
 use crate::api::shopee as shopee_api;
 use crate::components::error_banner::ErrorBanner;
 use crate::components::shopee_ocr::ShopeeOcr;
@@ -15,17 +17,40 @@ pub fn Shopee() -> Element {
     let mut input_store = use_signal(String::new);
     let mut input_code = use_signal(String::new);
     let mut error_msg = use_signal(|| Option::<String>::None);
+    let mut sync_status: Signal<SyncStatus> = use_context();
+    let sync_trigger: Signal<SyncTrigger> = use_context();
 
     let reload = move || {
         spawn(async move {
+            sync_status.set(SyncStatus::Syncing);
             match shopee_api::list_shopee().await {
-                Ok(loaded) => items.set(loaded),
-                Err(e) => error_msg.set(Some(format!("Failed to load: {e}"))),
+                Ok(loaded) => {
+                    cache::write("shopee", &loaded);
+                    cache::write_sync_time();
+                    items.set(loaded);
+                    sync_status.set(SyncStatus::Synced);
+                }
+                Err(e) => {
+                    if items.read().is_empty() {
+                        error_msg.set(Some(format!("Failed to load: {e}")));
+                    }
+                    sync_status.set(SyncStatus::CachedOnly);
+                }
             }
         });
     };
 
-    use_effect(move || { reload(); });
+    use_effect(move || {
+        if let Some(cached) = cache::read::<Vec<ShopeePackage>>("shopee") {
+            items.set(cached);
+        }
+        reload();
+    });
+
+    use_effect(move || {
+        let _trigger = sync_trigger.read().0;
+        reload();
+    });
 
     rsx! {
         div { class: "p-4 space-y-4",
@@ -67,16 +92,16 @@ pub fn Shopee() -> Element {
                         value: "{input_title}",
                         oninput: move |e| input_title.set(e.value()),
                     }
-                    div { class: "flex gap-2",
+                    div { class: "flex gap-2 items-start",
                         input {
-                            class: "flex-1 bg-cyber-dark border border-cyber-border rounded-lg px-4 py-2 text-sm text-cyber-text outline-none focus:border-neon-orange/60 font-mono",
+                            class: "flex-1 min-w-0 bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2 text-sm text-cyber-text outline-none focus:border-neon-orange/60 font-mono",
                             r#type: "text",
                             placeholder: "Store...",
                             value: "{input_store}",
                             oninput: move |e| input_store.set(e.value()),
                         }
                         input {
-                            class: "w-24 bg-cyber-dark border border-cyber-border rounded-lg px-4 py-2 text-sm text-cyber-text outline-none focus:border-neon-orange/60 font-mono",
+                            class: "w-20 bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2 text-sm text-cyber-text outline-none focus:border-neon-orange/60 font-mono",
                             r#type: "text",
                             placeholder: "Code",
                             value: "{input_code}",
@@ -84,24 +109,54 @@ pub fn Shopee() -> Element {
                         }
                         ShopeeOcr {
                             on_results: move |results: Vec<OcrResult>| {
-                                if results.len() == 1 {
-                                    // Single package: fill the form
-                                    let r = &results[0];
-                                    if let Some(ref code) = r.code {
-                                        input_code.set(code.clone());
-                                    }
-                                    if let Some(ref store) = r.store {
-                                        input_store.set(store.clone());
-                                    }
-                                    if let Some(ref title) = r.title {
-                                        input_title.set(title.clone());
-                                    }
-                                } else {
-                                    // Multiple packages: auto-add all
-                                    for r in results {
-                                        let title = r.title.unwrap_or_else(|| "Shopee Package".to_string());
-                                        let store = r.store;
-                                        let code = r.code;
+                                // Check for matches against existing packages, then add/update
+                                let current_items: Vec<ShopeePackage> = items.read().clone();
+
+                                for r in results {
+                                    let title = r.title.clone().unwrap_or_else(|| "Shopee Package".to_string());
+                                    let store = r.store.clone();
+                                    let code = r.code.clone();
+
+                                    // Try to find a matching existing package
+                                    let matching = current_items.iter().find(|pkg| {
+                                        if pkg.picked_up { return false; }
+                                        // Match by title substring
+                                        if let Some(ref ocr_title) = r.title {
+                                            let ocr_clean = ocr_title.replace("【", "").replace("】", "");
+                                            let pkg_clean = pkg.title.replace("【", "").replace("】", "");
+                                            if !ocr_clean.is_empty() && (pkg_clean.contains(&ocr_clean) || ocr_clean.contains(&pkg_clean)) {
+                                                return true;
+                                            }
+                                        }
+                                        // Match by store + code
+                                        if let (Some(ref pkg_store), Some(ref ocr_store)) = (&pkg.store, &r.store) {
+                                            if pkg_store == ocr_store {
+                                                if let (Some(ref pkg_code), Some(ref ocr_code)) = (&pkg.code, &r.code) {
+                                                    return pkg_code == ocr_code;
+                                                }
+                                            }
+                                        }
+                                        false
+                                    });
+
+                                    if let Some(existing) = matching {
+                                        // Update: add code to existing package if it was missing
+                                        if existing.code.is_none() {
+                                            if let Some(ref new_code) = code {
+                                                let id = existing.id.clone();
+                                                let code_val = new_code.clone();
+                                                spawn(async move {
+                                                    let _ = shopee_api::update_shopee_code(id, code_val).await;
+                                                    reload();
+                                                });
+                                            }
+                                        }
+                                        // Already exists with code — skip
+                                    } else {
+                                        // New package — add it
+                                        let title = title.clone();
+                                        let store = store.clone();
+                                        let code = code.clone();
                                         spawn(async move {
                                             let _ = shopee_api::add_shopee(title, store, code).await;
                                             reload();
@@ -133,9 +188,10 @@ pub fn Shopee() -> Element {
                     { render_package(pkg.clone(), reload, error_msg) }
                 }
                 if items.read().is_empty() {
-                    div { class: "text-center py-12",
+                    div { class: "text-center py-16",
+                        p { class: "text-2xl mb-3 opacity-30", "\u{1F4E6}" }
                         p { class: "text-xs tracking-[0.3em] uppercase text-cyber-dim", "No packages to pick up" }
-                        p { class: "text-[10px] text-cyber-dim/50 mt-3 tracking-wider",
+                        p { class: "text-[10px] text-cyber-dim/40 mt-2 tracking-wider",
                             "SWIPE \u{2192} PICKED UP \u{2022} SWIPE \u{2190} DELETE"
                         }
                     }

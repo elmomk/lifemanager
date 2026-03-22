@@ -8,10 +8,25 @@ static POOL: OnceLock<DbPool> = OnceLock::new();
 
 pub fn init() {
     let db_path = std::env::var("DATABASE_PATH").unwrap_or_else(|_| "life_manager.db".to_string());
-    let manager = SqliteConnectionManager::file(db_path);
+    let manager = SqliteConnectionManager::file(&db_path)
+        .with_init(|conn| {
+            conn.pragma_update(None, "busy_timeout", 5000)?;
+            Ok(())
+        });
     let pool = Pool::new(manager).expect("Failed to create DB pool");
 
     let conn = pool.get().expect("Failed to get DB connection");
+
+    // WAL mode: crash-safe, better concurrent read/write performance
+    conn.pragma_update(None, "journal_mode", "WAL")
+        .expect("Failed to set WAL mode");
+    // NORMAL sync is safe with WAL (full durability except on OS crash + power loss)
+    conn.pragma_update(None, "synchronous", "NORMAL")
+        .expect("Failed to set synchronous mode");
+    // Wait up to 5s for locks instead of failing immediately
+    conn.pragma_update(None, "busy_timeout", 5000)
+        .expect("Failed to set busy_timeout");
+
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS checklist_items (
             id TEXT PRIMARY KEY,
@@ -64,12 +79,31 @@ pub fn init() {
     )
     .expect("Failed to run migrations");
 
-    // Add completed_by column (safe to run multiple times)
-    let _ = conn.execute_batch(
-        "ALTER TABLE checklist_items ADD COLUMN completed_by TEXT;
-         ALTER TABLE shopee_packages ADD COLUMN completed_by TEXT;
-         ALTER TABLE watch_items ADD COLUMN completed_by TEXT;"
-    );
+    // Add completed_by column (safe to run multiple times — "duplicate column" errors are expected)
+    for sql in [
+        "ALTER TABLE checklist_items ADD COLUMN completed_by TEXT",
+        "ALTER TABLE shopee_packages ADD COLUMN completed_by TEXT",
+        "ALTER TABLE watch_items ADD COLUMN completed_by TEXT",
+    ] {
+        if let Err(e) = conn.execute_batch(sql) {
+            let msg = e.to_string();
+            if !msg.contains("duplicate column") {
+                eprintln!("WARNING: migration failed: {msg}");
+            }
+        }
+    }
+
+    // Add google_event_id column for Calendar sync
+    for sql in [
+        "ALTER TABLE checklist_items ADD COLUMN google_event_id TEXT",
+    ] {
+        if let Err(e) = conn.execute_batch(sql) {
+            let msg = e.to_string();
+            if !msg.contains("duplicate column") {
+                eprintln!("WARNING: migration failed: {msg}");
+            }
+        }
+    }
 
     // One-time migration: consolidate all users to 'default'
     run_once(&conn, "consolidate_users",

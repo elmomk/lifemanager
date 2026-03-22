@@ -1,6 +1,8 @@
 use chrono::{Local, NaiveDate};
 use dioxus::prelude::*;
 
+use crate::cache::{self, SyncStatus};
+use crate::components::layout::SyncTrigger;
 use crate::api::cycles as cycles_api;
 use crate::components::error_banner::ErrorBanner;
 use crate::components::swipe_item::SwipeItem;
@@ -16,17 +18,40 @@ pub fn Period() -> Element {
     let mut selected_symptoms = use_signal(Vec::<String>::new);
     let mut show_form = use_signal(|| false);
     let mut error_msg = use_signal(|| Option::<String>::None);
+    let mut sync_status: Signal<SyncStatus> = use_context();
+    let sync_trigger: Signal<SyncTrigger> = use_context();
 
     let reload = move || {
         spawn(async move {
+            sync_status.set(SyncStatus::Syncing);
             match cycles_api::list_cycles().await {
-                Ok(loaded) => cycles.set(loaded),
-                Err(e) => error_msg.set(Some(format!("Failed to load: {e}"))),
+                Ok(loaded) => {
+                    cache::write("cycles", &loaded);
+                    cache::write_sync_time();
+                    cycles.set(loaded);
+                    sync_status.set(SyncStatus::Synced);
+                }
+                Err(e) => {
+                    if cycles.read().is_empty() {
+                        error_msg.set(Some(format!("Failed to load: {e}")));
+                    }
+                    sync_status.set(SyncStatus::CachedOnly);
+                }
             }
         });
     };
 
-    use_effect(move || { reload(); });
+    use_effect(move || {
+        if let Some(cached) = cache::read::<Vec<Cycle>>("cycles") {
+            cycles.set(cached);
+        }
+        reload();
+    });
+
+    use_effect(move || {
+        let _trigger = sync_trigger.read().0;
+        reload();
+    });
 
     let prediction = {
         let c = cycles.read();
@@ -179,9 +204,10 @@ pub fn Period() -> Element {
                     { render_cycle(cycle.clone(), reload, error_msg) }
                 }
                 if cycles.read().is_empty() {
-                    div { class: "text-center py-12",
+                    div { class: "text-center py-16",
+                        p { class: "text-2xl mb-3 opacity-30", "\u{1F319}" }
                         p { class: "text-xs tracking-[0.3em] uppercase text-cyber-dim", "No cycles logged yet" }
-                        p { class: "text-[10px] text-cyber-dim/50 mt-3 tracking-wider",
+                        p { class: "text-[10px] text-cyber-dim/40 mt-2 tracking-wider",
                             "SWIPE \u{2190} DELETE"
                         }
                     }
