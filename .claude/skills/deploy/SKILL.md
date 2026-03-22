@@ -6,19 +6,8 @@ allowed-tools: Bash, Read, Glob
 
 Deploy the Life Manager application.
 
-## Steps
+Run: `./scripts/deploy.sh`
 
-1. Run the deploy script:
-   ```
-   ./scripts/deploy.sh
-   ```
+Verify: `docker compose logs app --tail 20` and `curl -s -o /dev/null -w "%{http_code}" https://lifemanager.tail6c1af7.ts.net/`
 
-2. If the script succeeds, verify with:
-   ```
-   docker compose logs app --tail 20
-   curl -s -o /dev/null -w "%{http_code}" https://lifemanager.tail6c1af7.ts.net/
-   ```
-
-3. Report the result: whether all server functions registered and the app returns 200.
-
-If any step fails, show the error logs and suggest a fix.
+Report whether server functions registered and app returns 200. On failure, show error logs and suggest a fix.
