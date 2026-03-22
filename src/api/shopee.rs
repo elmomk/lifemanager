@@ -96,7 +96,7 @@ fn extract_packages(text: &str) -> Vec<OcrResult> {
         let title = extract_title_from_section(&section_lines);
         let store = extract_store_from_section(&section_lines);
         let code = extract_code_from_section(&section_text);
-        let due_date = extract_due_date(&section_lines);
+        let (due_date, date_is_estimate) = extract_due_date(&section_lines);
 
         if title.is_some() || store.is_some() || code.is_some() {
             results.push(OcrResult {
@@ -104,6 +104,7 @@ fn extract_packages(text: &str) -> Vec<OcrResult> {
                 store,
                 code,
                 due_date,
+                date_is_estimate,
             });
         }
     }
@@ -273,45 +274,43 @@ fn extract_code_from_section(text: &str) -> Option<String> {
     None
 }
 
-/// Extract due date from section lines.
-/// Patterns:
-/// - "請於 MM/DD 前" or "請於 M月D日 前" (pickup deadline)
-/// - "預計於 MM/DD - MM/DD 配達" (delivery estimate, use later date)
-/// - "YYYY/MM/DD" standalone dates
+/// Extract due date from section lines. Returns (date, is_estimate).
+/// - "請於 DATE 前" → pickup deadline (is_estimate = false)
+/// - "預計於 DATE 配達" → delivery estimate (is_estimate = true)
 #[cfg(not(target_arch = "wasm32"))]
-fn extract_due_date(lines: &[&str]) -> Option<String> {
+fn extract_due_date(lines: &[&str]) -> (Option<String>, bool) {
     let current_year = chrono::Utc::now().format("%Y").to_string();
 
     for line in lines {
-        // Pattern: 請於 DATE 前 (pickup deadline)
+        // Pattern: 請於 DATE 前 (pickup deadline — firm date)
         if let Some(pos) = line.find("請於") {
             let after = &line[pos + "請於".len()..];
             if let Some(date) = parse_chinese_date(after, &current_year) {
-                return Some(date);
+                return (Some(date), false);
             }
         }
 
-        // Pattern: 預計於 DATE - DATE 配達 (delivery estimate, use later date)
+        // Pattern: 預計於 DATE - DATE 配達 (delivery estimate)
         if let Some(pos) = line.find("預計於") {
             let after = &line[pos + "預計於".len()..];
             let dates = extract_dates_from_segment(after, &current_year);
             if let Some(last) = dates.last() {
-                return Some(last.clone());
+                return (Some(last.clone()), true);
             }
         }
 
-        // Pattern: 預計 DATE 到達/送達 (but not 預計於, already handled above)
+        // Pattern: 預計 DATE (estimate, but not 預計於)
         if line.contains("預計") && !line.contains("預計於") {
             if let Some(pos) = line.find("預計") {
                 let after = &line[pos + "預計".len()..];
                 if let Some(date) = parse_chinese_date(after, &current_year) {
-                    return Some(date);
+                    return (Some(date), true);
                 }
             }
         }
     }
 
-    None
+    (None, false)
 }
 
 /// Parse a date from text that might be in formats like:
@@ -425,10 +424,10 @@ fn extract_single_package(text: &str) -> Option<OcrResult> {
     let title = extract_title_from_section(&lines);
     let store = extract_store_from_section(&lines);
     let code = extract_code_from_section(text);
-    let due_date = extract_due_date(&lines);
+    let (due_date, date_is_estimate) = extract_due_date(&lines);
 
     if title.is_some() || store.is_some() || code.is_some() {
-        Some(OcrResult { title, store, code, due_date })
+        Some(OcrResult { title, store, code, due_date, date_is_estimate })
     } else {
         None
     }
@@ -515,7 +514,7 @@ pub async fn list_shopee() -> Result<Vec<ShopeePackage>, ServerFnError> {
 
     let mut stmt = conn
         .prepare(
-            "SELECT id, title, store, code, due_date, picked_up, created_at, completed_by
+            "SELECT id, title, store, code, due_date, date_is_estimate, picked_up, created_at, completed_by
              FROM shopee_packages
              WHERE user_id = ?1
              ORDER BY picked_up ASC, created_at DESC",
@@ -530,9 +529,10 @@ pub async fn list_shopee() -> Result<Vec<ShopeePackage>, ServerFnError> {
                 store: row.get(2)?,
                 code: row.get(3)?,
                 due_date: row.get(4)?,
-                picked_up: row.get(5)?,
-                created_at: row.get(6)?,
-                completed_by: row.get(7)?,
+                date_is_estimate: row.get::<_, i32>(5).unwrap_or(0) != 0,
+                picked_up: row.get(6)?,
+                created_at: row.get(7)?,
+                completed_by: row.get(8)?,
             })
         })
         .map_err(|e| ServerFnError::new(e.to_string()))?
@@ -548,6 +548,7 @@ pub async fn add_shopee(
     store: Option<String>,
     code: Option<String>,
     due_date: Option<String>,
+    date_is_estimate: bool,
 ) -> Result<(), ServerFnError> {
     use crate::server::{auth, db, validate};
 
@@ -562,9 +563,9 @@ pub async fn add_shopee(
     let now = chrono::Utc::now().timestamp_millis() as f64;
 
     conn.execute(
-        "INSERT INTO shopee_packages (id, user_id, title, store, code, due_date, picked_up, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7)",
-        rusqlite::params![id, user_id, title, store, code, due_date, now],
+        "INSERT INTO shopee_packages (id, user_id, title, store, code, due_date, date_is_estimate, picked_up, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
+        rusqlite::params![id, user_id, title, store, code, due_date, date_is_estimate as i32, now],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -689,7 +690,7 @@ pub async fn find_matching_packages(titles: Vec<String>) -> Result<Vec<ShopeePac
     for title in &titles {
         let mut stmt = conn
             .prepare(
-                "SELECT id, title, store, code, due_date, picked_up, created_at, completed_by
+                "SELECT id, title, store, code, due_date, date_is_estimate, picked_up, created_at, completed_by
                  FROM shopee_packages
                  WHERE user_id = ?1 AND picked_up = 0 AND title LIKE '%' || ?2 || '%'"
             )
@@ -703,9 +704,10 @@ pub async fn find_matching_packages(titles: Vec<String>) -> Result<Vec<ShopeePac
                     store: row.get(2)?,
                     code: row.get(3)?,
                     due_date: row.get(4)?,
-                    picked_up: row.get(5)?,
-                    created_at: row.get(6)?,
-                    completed_by: row.get(7)?,
+                    date_is_estimate: row.get::<_, i32>(5).unwrap_or(0) != 0,
+                    picked_up: row.get(6)?,
+                    created_at: row.get(7)?,
+                    completed_by: row.get(8)?,
                 })
             })
             .map_err(|e| ServerFnError::new(e.to_string()))?

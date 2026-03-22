@@ -79,7 +79,7 @@ pub fn Shopee() -> Element {
                             if d.is_empty() { None } else { Some(d) }
                         };
                         spawn(async move {
-                            match shopee_api::add_shopee(title, store, code, due_date).await {
+                            match shopee_api::add_shopee(title, store, code, due_date, false).await {
                                 Ok(()) => {
                                     input_title.set(String::new());
                                     input_store.set(String::new());
@@ -123,6 +123,7 @@ pub fn Shopee() -> Element {
                                     let store = r.store.clone();
                                     let code = r.code.clone();
                                     let due_date = r.due_date.clone();
+                                    let date_is_estimate = r.date_is_estimate;
 
                                     // Try to find a matching existing package
                                     let matching = current_items.iter().find(|pkg| {
@@ -166,7 +167,7 @@ pub fn Shopee() -> Element {
                                         let code = code.clone();
                                         let due_date = due_date.clone();
                                         spawn(async move {
-                                            let _ = shopee_api::add_shopee(title, store, code, due_date).await;
+                                            let _ = shopee_api::add_shopee(title, store, code, due_date, date_is_estimate).await;
                                             reload();
                                         });
                                     }
@@ -278,7 +279,11 @@ fn render_package(
                         span { class: "bg-neon-yellow/10 text-neon-yellow border border-neon-yellow/30 px-2 py-0.5 rounded font-mono", "{code}" }
                     }
                     if let Some(due_date) = &pkg.due_date {
-                        span { class: "bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/30 px-2 py-0.5 rounded font-mono", "{due_date}" }
+                        if pkg.date_is_estimate {
+                            span { class: "bg-neon-purple/10 text-neon-purple border border-neon-purple/30 px-2 py-0.5 rounded font-mono", "est. {due_date}" }
+                        } else {
+                            span { class: "bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/30 px-2 py-0.5 rounded font-mono", "by {due_date}" }
+                        }
                     }
                 }
             }

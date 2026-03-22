@@ -108,6 +108,7 @@ pub fn init() {
     // Add due_date and google_event_id columns to shopee_packages
     for sql in [
         "ALTER TABLE shopee_packages ADD COLUMN due_date TEXT",
+        "ALTER TABLE shopee_packages ADD COLUMN date_is_estimate INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE shopee_packages ADD COLUMN google_event_id TEXT",
     ] {
         if let Err(e) = conn.execute_batch(sql) {
