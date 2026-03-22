@@ -15,6 +15,8 @@ pub enum Route {
         Shopee {},
         #[route("/watchlist")]
         Watchlist {},
+        #[route("/watchlist/settings")]
+        WatchSettings {},
         #[route("/period")]
         Period {},
     #[end_layout]

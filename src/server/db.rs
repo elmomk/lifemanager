@@ -74,8 +74,31 @@ pub fn init() {
         CREATE INDEX IF NOT EXISTS idx_checklist_user ON checklist_items(user_id, category, done);
         CREATE INDEX IF NOT EXISTS idx_shopee_user ON shopee_packages(user_id, picked_up);
         CREATE INDEX IF NOT EXISTS idx_watch_user ON watch_items(user_id, done);
+        CREATE TABLE IF NOT EXISTS watch_progress (
+            id TEXT PRIMARY KEY,
+            watch_item_id TEXT NOT NULL REFERENCES watch_items(id) ON DELETE CASCADE,
+            season INTEGER NOT NULL DEFAULT 1,
+            episode INTEGER NOT NULL,
+            watched_at REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_watch_progress_item ON watch_progress(watch_item_id, season, episode);
+        CREATE TABLE IF NOT EXISTS watch_franchise (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            from_item_id TEXT NOT NULL REFERENCES watch_items(id) ON DELETE CASCADE,
+            to_item_id TEXT NOT NULL REFERENCES watch_items(id) ON DELETE CASCADE,
+            relation TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_franchise_from ON watch_franchise(from_item_id);
+        CREATE INDEX IF NOT EXISTS idx_franchise_to ON watch_franchise(to_item_id);
         CREATE INDEX IF NOT EXISTS idx_cycles_user ON cycles(user_id);
-        CREATE INDEX IF NOT EXISTS idx_defaults_user ON default_items(user_id, category);"
+        CREATE INDEX IF NOT EXISTS idx_defaults_user ON default_items(user_id, category);
+        CREATE TABLE IF NOT EXISTS watch_settings (
+            user_id TEXT PRIMARY KEY,
+            streaming_providers TEXT NOT NULL DEFAULT '[]',
+            filter_by_provider INTEGER NOT NULL DEFAULT 0
+        );"
     )
     .expect("Failed to run migrations");
 
@@ -118,6 +141,47 @@ pub fn init() {
             }
         }
     }
+
+    // Add media tracker columns to watch_items
+    for sql in [
+        "ALTER TABLE watch_items ADD COLUMN status TEXT NOT NULL DEFAULT 'unwatched'",
+        "ALTER TABLE watch_items ADD COLUMN total_seasons INTEGER",
+        "ALTER TABLE watch_items ADD COLUMN total_episodes INTEGER",
+        "ALTER TABLE watch_items ADD COLUMN poster_url TEXT",
+        "ALTER TABLE watch_items ADD COLUMN tmdb_id INTEGER",
+        "ALTER TABLE watch_items ADD COLUMN jikan_id INTEGER",
+    ] {
+        if let Err(e) = conn.execute_batch(sql) {
+            let msg = e.to_string();
+            if !msg.contains("duplicate column") {
+                eprintln!("WARNING: migration failed: {msg}");
+            }
+        }
+    }
+
+    // Add overview, trailer_url, season_data columns
+    for sql in [
+        "ALTER TABLE watch_items ADD COLUMN overview TEXT",
+        "ALTER TABLE watch_items ADD COLUMN trailer_url TEXT",
+        "ALTER TABLE watch_items ADD COLUMN season_data TEXT",
+    ] {
+        if let Err(e) = conn.execute_batch(sql) {
+            let msg = e.to_string();
+            if !msg.contains("duplicate column") {
+                eprintln!("WARNING: migration failed: {msg}");
+            }
+        }
+    }
+
+    // Backfill status from done flag
+    run_once(&conn, "watch_status_backfill",
+        "UPDATE watch_items SET status = 'completed' WHERE done = 1 AND status = 'unwatched';"
+    );
+
+    // Migrate Cartoon → Series
+    run_once(&conn, "watch_cartoon_to_series",
+        "UPDATE watch_items SET media_type = 'Series' WHERE media_type = 'Cartoon';"
+    );
 
     // One-time migration: consolidate all users to 'default'
     run_once(&conn, "consolidate_users",

@@ -144,3 +144,26 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .swipe-hint {
   animation: hint-swipe 1.2s ease-in-out 1s 1;
 }
+
+/* Card flip for explore */
+.flip-card {
+  perspective: 800px;
+}
+.flip-card-inner {
+  position: relative;
+  transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+.flip-card-inner.flipped {
+  transform: rotateY(180deg);
+}
+.flip-card-front,
+.flip-card-back {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.flip-card-back {
+  position: absolute;
+  inset: 0;
+  transform: rotateY(180deg);
+}
