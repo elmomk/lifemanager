@@ -69,7 +69,7 @@ pub async fn add_checklist(
     .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     // Fire-and-forget Google Calendar sync
-    if category == ItemCategory::Todo {
+    {
         if let Some(ref d) = date {
             let id2 = id.clone();
             let text2 = text.clone();

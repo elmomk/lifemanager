@@ -16,6 +16,7 @@ pub fn Shopee() -> Element {
     let mut input_title = use_signal(String::new);
     let mut input_store = use_signal(String::new);
     let mut input_code = use_signal(String::new);
+    let mut input_due_date = use_signal(String::new);
     let mut error_msg = use_signal(|| Option::<String>::None);
     let mut sync_status: Signal<SyncStatus> = use_context();
     let sync_trigger: Signal<SyncTrigger> = use_context();
@@ -73,12 +74,17 @@ pub fn Shopee() -> Element {
                             let c = input_code.read().clone();
                             if c.is_empty() { None } else { Some(c) }
                         };
+                        let due_date = {
+                            let d = input_due_date.read().clone();
+                            if d.is_empty() { None } else { Some(d) }
+                        };
                         spawn(async move {
-                            match shopee_api::add_shopee(title, store, code).await {
+                            match shopee_api::add_shopee(title, store, code, due_date).await {
                                 Ok(()) => {
                                     input_title.set(String::new());
                                     input_store.set(String::new());
                                     input_code.set(String::new());
+                                    input_due_date.set(String::new());
                                     reload();
                                 }
                                 Err(e) => error_msg.set(Some(format!("Failed to add: {e}"))),
@@ -116,6 +122,7 @@ pub fn Shopee() -> Element {
                                     let title = r.title.clone().unwrap_or_else(|| "Shopee Package".to_string());
                                     let store = r.store.clone();
                                     let code = r.code.clone();
+                                    let due_date = r.due_date.clone();
 
                                     // Try to find a matching existing package
                                     let matching = current_items.iter().find(|pkg| {
@@ -157,14 +164,21 @@ pub fn Shopee() -> Element {
                                         let title = title.clone();
                                         let store = store.clone();
                                         let code = code.clone();
+                                        let due_date = due_date.clone();
                                         spawn(async move {
-                                            let _ = shopee_api::add_shopee(title, store, code).await;
+                                            let _ = shopee_api::add_shopee(title, store, code, due_date).await;
                                             reload();
                                         });
                                     }
                                 }
                             },
                         }
+                    }
+                    input {
+                        class: "w-full bg-cyber-dark border border-cyber-border rounded-lg px-3 py-2 text-sm text-cyber-text outline-none focus:border-neon-orange/60 font-mono",
+                        r#type: "date",
+                        value: "{input_due_date}",
+                        oninput: move |e| input_due_date.set(e.value()),
                     }
                     // Store quick-select
                     div { class: "relative",
@@ -262,6 +276,9 @@ fn render_package(
                     }
                     if let Some(code) = &pkg.code {
                         span { class: "bg-neon-yellow/10 text-neon-yellow border border-neon-yellow/30 px-2 py-0.5 rounded font-mono", "{code}" }
+                    }
+                    if let Some(due_date) = &pkg.due_date {
+                        span { class: "bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/30 px-2 py-0.5 rounded font-mono", "{due_date}" }
                     }
                 }
             }

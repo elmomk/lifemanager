@@ -52,7 +52,13 @@ pub async fn ocr_shopee(image_base64: String) -> Result<Vec<OcrResult>, ServerFn
         return Err(ServerFnError::new("OCR processing failed".to_string()));
     }
 
-    let text = String::from_utf8_lossy(&output.stdout).to_string();
+    let raw_text = String::from_utf8_lossy(&output.stdout).to_string();
+
+    // Normalize OCR output: Tesseract often adds spaces between CJK characters
+    // and uses fullwidth punctuation. Collapse spaces between CJK chars and
+    // normalize common OCR artifacts.
+    let text = normalize_ocr_text(&raw_text);
+    tracing::debug!("OCR normalized text:\n{text}");
 
     let results = extract_packages(&text);
 
@@ -90,13 +96,14 @@ fn extract_packages(text: &str) -> Vec<OcrResult> {
         let title = extract_title_from_section(&section_lines);
         let store = extract_store_from_section(&section_lines);
         let code = extract_code_from_section(&section_text);
-        let _delivery_status = extract_delivery_status(&section_lines);
+        let due_date = extract_due_date(&section_lines);
 
         if title.is_some() || store.is_some() || code.is_some() {
             results.push(OcrResult {
                 title,
                 store,
-                code, // None for packages not yet arrived
+                code,
+                due_date,
             });
         }
     }
@@ -115,51 +122,53 @@ fn extract_packages(text: &str) -> Vec<OcrResult> {
 }
 
 /// Detect store header lines. These are brand/store name lines that start each package section.
-/// Patterns: lines with CJK + brand-like text, often followed by product lines.
-/// Heuristic: lines that DON'T match known non-header patterns and appear before product titles.
+/// In Shopee's "待收貨" list, each package starts with a line like:
+///   "QMAT OUTLET 運動/瑜珈墊 巧拼地墊 按... 待收貨"
+///   "DENPA GINGA 電波銀河 待收貨"
+/// The key signal: `待收貨` (or `待出貨`) at the end of a line that also has a store name.
 #[cfg(not(target_arch = "wasm32"))]
 fn find_store_headers(lines: &[(usize, &str)]) -> Vec<usize> {
     let mut headers = Vec::new();
-    let non_header_patterns = &[
-        "待收貨", "待付款", "待出貨", "訂單", "退貨", "退款", "追蹤",
-        "取件", "驗證", "請於", "猜你", "購買", "已售出", "查看更多",
-        "預計於", "配達", "包裹", "出貨", "物流", "運送中",
-        "【", "】", "取件驗證碼", "店到店",
-    ];
+
+    // Status markers that appear on store header lines in the Shopee order list
+    // Note: OCR may produce "待收吉" instead of "待收貨"
+    let header_markers = &["待收貨", "待出貨", "待收吉"];
+
+    // Store name indicators (brand-like patterns)
     let store_indicators = &[
         "旗艦", "官方", "專賣", "OUTLET", "outlet", "Shop", "shop", "SHOP",
-        "Store", "store", "STORE", "旗艦店", "官方店",
+        "Store", "store", "STORE", "旗艦店", "官方店", "GINGA", "DENPA",
     ];
 
     for (idx, (_, line)) in lines.iter().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.len() < 3 { continue; }
 
-        // Skip lines that are clearly not headers
-        if non_header_patterns.iter().any(|p| trimmed.contains(p)) { continue; }
+        // Primary strategy: line contains 待收貨/待出貨 — this IS a store header line
+        let has_marker = header_markers.iter().any(|p| trimmed.contains(p));
+        if has_marker {
+            // Make sure it's not JUST the tab label (e.g. a standalone "待收貨" tab)
+            // Header lines have store name text alongside the marker
+            let char_count = trimmed.chars().count();
+            if char_count > 4 {
+                headers.push(idx);
+                continue;
+            }
+        }
 
-        // Skip pure numeric/price lines
-        if trimmed.chars().all(|c| c.is_ascii_digit() || c == '$' || c == ',' || c == '.' || c == ' ' || c == 'x' || c == 'X') { continue; }
-
-        // A store header often contains brand-like indicators
+        // Fallback: lines with store indicators followed by a product title within 5 lines
         let has_indicator = store_indicators.iter().any(|p| trimmed.contains(p));
-
-        // Or it's a short-medium line (store names aren't super long) with mixed CJK/ASCII
-        let char_count = trimmed.chars().count();
-        let has_cjk = trimmed.chars().any(|c| c >= '\u{4e00}' && c <= '\u{9fff}');
-        let has_ascii = trimmed.chars().any(|c| c.is_ascii_alphabetic());
-        let is_reasonable_length = char_count >= 3 && char_count <= 40;
-
-        // Check if next few lines contain a product title (【】) — confirms this is a section header
-        let next_has_product = lines[idx+1..std::cmp::min(idx+5, lines.len())]
-            .iter()
-            .any(|(_, l)| l.contains('【'));
-
-        if has_indicator && is_reasonable_length {
-            headers.push(idx);
-        } else if next_has_product && is_reasonable_length && (has_cjk || has_ascii) {
-            // If the next few lines have a product title, this line is likely a store header
-            headers.push(idx);
+        if has_indicator {
+            let char_count = trimmed.chars().count();
+            if char_count >= 3 && char_count <= 50 {
+                // Confirm: next few lines should have a product title (【】)
+                let next_has_product = lines[idx+1..std::cmp::min(idx+5, lines.len())]
+                    .iter()
+                    .any(|(_, l)| l.contains('【'));
+                if next_has_product {
+                    headers.push(idx);
+                }
+            }
         }
     }
 
@@ -186,6 +195,8 @@ fn extract_title_from_section(lines: &[&str]) -> Option<String> {
         "待收貨", "待付款", "待出貨", "訂單", "退貨", "退款", "追蹤",
         "取件", "驗證", "請於", "猜你", "購買", "蝦皮", "已售出",
         "預計於", "配達", "查看更多", "物流", "運送中", "出貨",
+        "完成訂單", "追蹤訂單", "檢視其他", "較長備貨", "超取", "店到店",
+        "訂單金額", "包裹抵達", "處理中",
     ];
     for line in lines.iter().skip(1) { // skip first line (store header)
         let trimmed = line.trim();
@@ -199,24 +210,34 @@ fn extract_title_from_section(lines: &[&str]) -> Option<String> {
 }
 
 /// Extract store/location from section lines.
+/// The pickup info may span multiple lines, e.g.:
+///   "請於 2026-03-28 前 , 至蝦皮店到店南港重"
+///   "陽 - 智取店取件。取件驗證碼 ﹔ 782399。"
+/// So we join the section text and search in the combined string.
 #[cfg(not(target_arch = "wasm32"))]
 fn extract_store_from_section(lines: &[&str]) -> Option<String> {
-    for line in lines {
-        // Pattern: 至 ... 取件
-        if let Some(start) = line.find('至') {
-            let after = &line[start + '至'.len_utf8()..];
-            if let Some(end) = after.find("取件") {
-                let store = after[..end].trim()
-                    .trim_start_matches("蝦皮店到店")
-                    .trim_start_matches("蝦皮")
-                    .trim();
-                if !store.is_empty() {
-                    return Some(store.to_string());
-                }
+    // Join all lines to handle multi-line pickup info
+    let combined = lines.join(" ");
+
+    // Pattern: 至 ... 取件 (pickup location)
+    if let Some(start) = combined.find('至') {
+        let after = &combined[start + '至'.len_utf8()..];
+        if let Some(end) = after.find("取件") {
+            let store = after[..end].trim()
+                .trim_start_matches("蝦皮店到店")
+                .trim_start_matches("蝦皮")
+                .trim();
+            if !store.is_empty() && store.chars().count() > 1 {
+                let store = store.trim_end_matches(|c: char| {
+                    c == '。' || c == '.' || c == ',' || c == '，' || c == ' '
+                });
+                return Some(store.to_string());
             }
         }
+    }
 
-        // Pattern: 店到店 LOCATION
+    // Pattern: 店到店 LOCATION (on a single line)
+    for line in lines {
         if let Some(pos) = line.find("店到店") {
             let after = &line[pos + "店到店".len()..];
             let store = after.trim().trim_end_matches(|c: char| {
@@ -240,6 +261,7 @@ fn extract_code_from_section(text: &str) -> Option<String> {
             let after = &text[pos + pattern.len()..];
             let after = after.trim_start_matches(|c: char| {
                 c == '：' || c == ':' || c == ' ' || c == '\t' || c == ',' || c == '，'
+                || c == '﹔' || c == ';' || c == '；'
             });
             let code: String = after.chars().take_while(|c| c.is_ascii_digit()).collect();
             if code.len() >= 4 {
@@ -251,18 +273,147 @@ fn extract_code_from_section(text: &str) -> Option<String> {
     None
 }
 
-/// Detect delivery status lines like "預計於 DATE 配達" (package not yet arrived).
+/// Extract due date from section lines.
+/// Patterns:
+/// - "請於 MM/DD 前" or "請於 M月D日 前" (pickup deadline)
+/// - "預計於 MM/DD - MM/DD 配達" (delivery estimate, use later date)
+/// - "YYYY/MM/DD" standalone dates
 #[cfg(not(target_arch = "wasm32"))]
-fn extract_delivery_status(lines: &[&str]) -> Option<String> {
+fn extract_due_date(lines: &[&str]) -> Option<String> {
+    let current_year = chrono::Utc::now().format("%Y").to_string();
+
     for line in lines {
-        if line.contains("預計於") || line.contains("預計") && line.contains("配達") {
-            return Some(line.trim().to_string());
+        // Pattern: 請於 DATE 前 (pickup deadline)
+        if let Some(pos) = line.find("請於") {
+            let after = &line[pos + "請於".len()..];
+            if let Some(date) = parse_chinese_date(after, &current_year) {
+                return Some(date);
+            }
         }
-        if line.contains("運送中") || line.contains("出貨中") {
-            return Some(line.trim().to_string());
+
+        // Pattern: 預計於 DATE - DATE 配達 (delivery estimate, use later date)
+        if let Some(pos) = line.find("預計於") {
+            let after = &line[pos + "預計於".len()..];
+            let dates = extract_dates_from_segment(after, &current_year);
+            if let Some(last) = dates.last() {
+                return Some(last.clone());
+            }
+        }
+
+        // Pattern: 預計 DATE 到達/送達 (but not 預計於, already handled above)
+        if line.contains("預計") && !line.contains("預計於") {
+            if let Some(pos) = line.find("預計") {
+                let after = &line[pos + "預計".len()..];
+                if let Some(date) = parse_chinese_date(after, &current_year) {
+                    return Some(date);
+                }
+            }
         }
     }
+
     None
+}
+
+/// Parse a date from text that might be in formats like:
+/// "3/25", "03/25", "3月25日", "2026/03/25", "2026-03-25"
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_chinese_date(text: &str, current_year: &str) -> Option<String> {
+    let text = text.trim();
+
+    // Try M月D日 format
+    if let Some(month_pos) = text.find('月') {
+        let month_str: String = text[..month_pos]
+            .chars()
+            .rev()
+            .take_while(|c| c.is_ascii_digit())
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
+        if let Some(day_pos) = text[month_pos..].find('日') {
+            let between = &text[month_pos + '月'.len_utf8()..month_pos + day_pos];
+            let day_str: String = between.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if let (Ok(m), Ok(d)) = (month_str.parse::<u32>(), day_str.parse::<u32>()) {
+                if m >= 1 && m <= 12 && d >= 1 && d <= 31 {
+                    return Some(format!("{current_year}-{m:02}-{d:02}"));
+                }
+            }
+        }
+    }
+
+    // Try YYYY/MM/DD or MM/DD (slash or dash separated)
+    let slash_parts: Vec<&str> = text
+        .split(|c: char| c == '/' || c == '-')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
+        .collect();
+
+    if slash_parts.len() >= 3 {
+        // YYYY/MM/DD
+        if let (Ok(y), Ok(m), Ok(d)) = (
+            slash_parts[0].parse::<i32>(),
+            slash_parts[1].parse::<u32>(),
+            slash_parts[2].parse::<u32>(),
+        ) {
+            if y >= 2020 && m >= 1 && m <= 12 && d >= 1 && d <= 31 {
+                return Some(format!("{y}-{m:02}-{d:02}"));
+            }
+        }
+    } else if slash_parts.len() == 2 {
+        // MM/DD
+        if let (Ok(m), Ok(d)) = (slash_parts[0].parse::<u32>(), slash_parts[1].parse::<u32>()) {
+            if m >= 1 && m <= 12 && d >= 1 && d <= 31 {
+                return Some(format!("{current_year}-{m:02}-{d:02}"));
+            }
+        }
+    }
+
+    None
+}
+
+/// Extract all parseable dates from a text segment (used for date ranges).
+/// After normalization, date ranges look like: "2026-03-20 - 2026-03-22"
+#[cfg(not(target_arch = "wasm32"))]
+fn extract_dates_from_segment(text: &str, current_year: &str) -> Vec<String> {
+    let mut dates = Vec::new();
+
+    // Try to find all YYYY-MM-DD patterns using regex-like manual scan
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        // Look for 4-digit year
+        if chars[i].is_ascii_digit() {
+            let start = i;
+            let num: String = chars[i..].iter().take_while(|c| c.is_ascii_digit()).collect();
+            if num.len() == 4 {
+                // Could be YYYY-MM-DD
+                let rest = &text[text.char_indices().nth(start).unwrap().0..];
+                if let Some(date) = parse_chinese_date(rest, current_year) {
+                    dates.push(date);
+                    i += 10; // skip past the date
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+
+    // Fallback: split by common delimiters
+    if dates.is_empty() {
+        for part in text.split(|c: char| c == '~' || c == '至' || c == '到') {
+            if let Some(date) = parse_chinese_date(part, current_year) {
+                dates.push(date);
+            }
+        }
+    }
+
+    if dates.is_empty() {
+        if let Some(date) = parse_chinese_date(text, current_year) {
+            dates.push(date);
+        }
+    }
+
+    dates
 }
 
 /// Fallback: try to extract a single package from the entire text.
@@ -274,12 +425,73 @@ fn extract_single_package(text: &str) -> Option<OcrResult> {
     let title = extract_title_from_section(&lines);
     let store = extract_store_from_section(&lines);
     let code = extract_code_from_section(text);
+    let due_date = extract_due_date(&lines);
 
     if title.is_some() || store.is_some() || code.is_some() {
-        Some(OcrResult { title, store, code })
+        Some(OcrResult { title, store, code, due_date })
     } else {
         None
     }
+}
+
+/// Normalize OCR text: collapse spaces between CJK characters and normalize punctuation.
+/// Tesseract often outputs "待 收 貨" instead of "待收貨" and uses fullwidth punctuation.
+#[cfg(not(target_arch = "wasm32"))]
+fn normalize_ocr_text(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+
+    // First pass: normalize fullwidth punctuation to ASCII equivalents
+    for ch in text.chars() {
+        match ch {
+            '﹣' | '－' => result.push('-'),
+            '﹕' | '：' => result.push(':'),
+            '﹐' | '，' => result.push(','),
+            '﹒' => result.push('.'),
+            '﹩' => result.push('$'),
+            '﹔' | '；' => result.push(';'),
+            '\u{FF3B}' => result.push('['), // ［
+            '\u{FF3D}' => result.push(']'), // ］
+            _ => result.push(ch),
+        }
+    }
+
+    // Second pass: collapse spaces between CJK characters
+    // A "CJK char" includes CJK Unified Ideographs and common CJK punctuation
+    let chars: Vec<char> = result.chars().collect();
+    let mut collapsed = String::with_capacity(result.len());
+    let mut i = 0;
+    while i < chars.len() {
+        collapsed.push(chars[i]);
+        // If current char is CJK and next is space(s) followed by CJK, skip the spaces
+        if is_cjk_or_punct(chars[i]) && i + 1 < chars.len() && chars[i + 1] == ' ' {
+            let mut j = i + 1;
+            while j < chars.len() && chars[j] == ' ' {
+                j += 1;
+            }
+            if j < chars.len() && is_cjk_or_punct(chars[j]) {
+                // Skip spaces between CJK chars
+                i = j;
+                continue;
+            }
+        }
+        i += 1;
+    }
+
+    // Also normalize [ to 【 and ] to 】 when they look like product title brackets
+    collapsed = collapsed.replace('[', "【").replace(']', "】");
+
+    collapsed
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn is_cjk_or_punct(c: char) -> bool {
+    // CJK Unified Ideographs
+    (c >= '\u{4e00}' && c <= '\u{9fff}')
+    // CJK punctuation
+    || c == '【' || c == '】' || c == '。' || c == '，' || c == '：'
+    || c == '、' || c == '（' || c == '）' || c == '「' || c == '」'
+    // Common fullwidth
+    || c == '﹣' || c == '﹕'
 }
 
 /// Helper: iterate lines with their byte offset in the original text.
@@ -303,7 +515,7 @@ pub async fn list_shopee() -> Result<Vec<ShopeePackage>, ServerFnError> {
 
     let mut stmt = conn
         .prepare(
-            "SELECT id, title, store, code, picked_up, created_at, completed_by
+            "SELECT id, title, store, code, due_date, picked_up, created_at, completed_by
              FROM shopee_packages
              WHERE user_id = ?1
              ORDER BY picked_up ASC, created_at DESC",
@@ -317,9 +529,10 @@ pub async fn list_shopee() -> Result<Vec<ShopeePackage>, ServerFnError> {
                 title: row.get(1)?,
                 store: row.get(2)?,
                 code: row.get(3)?,
-                picked_up: row.get(4)?,
-                created_at: row.get(5)?,
-                completed_by: row.get(6)?,
+                due_date: row.get(4)?,
+                picked_up: row.get(5)?,
+                created_at: row.get(6)?,
+                completed_by: row.get(7)?,
             })
         })
         .map_err(|e| ServerFnError::new(e.to_string()))?
@@ -334,6 +547,7 @@ pub async fn add_shopee(
     title: String,
     store: Option<String>,
     code: Option<String>,
+    due_date: Option<String>,
 ) -> Result<(), ServerFnError> {
     use crate::server::{auth, db, validate};
 
@@ -341,17 +555,28 @@ pub async fn add_shopee(
     validate::text(&title, "title")?;
     if let Some(ref s) = store { validate::short(s, "store")?; }
     if let Some(ref c) = code { validate::short(c, "code")?; }
+    if let Some(ref d) = due_date { validate::date(d)?; }
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis() as f64;
 
     conn.execute(
-        "INSERT INTO shopee_packages (id, user_id, title, store, code, picked_up, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6)",
-        rusqlite::params![id, user_id, title, store, code, now],
+        "INSERT INTO shopee_packages (id, user_id, title, store, code, due_date, picked_up, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0, ?7)",
+        rusqlite::params![id, user_id, title, store, code, due_date, now],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // Fire-and-forget Google Calendar sync
+    if let Some(ref d) = due_date {
+        let id2 = id.clone();
+        let title2 = title.clone();
+        let d2 = d.clone();
+        tokio::spawn(async move {
+            crate::server::google::sync_item(&id2, &title2, Some(&d2), false, None).await;
+        });
+    }
 
     Ok(())
 }
@@ -372,6 +597,32 @@ pub async fn toggle_shopee(id: String) -> Result<(), ServerFnError> {
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Fire-and-forget Google Calendar sync
+    {
+        let id2 = id.clone();
+        tokio::spawn(async move {
+            let conn = crate::server::db::pool().get().ok();
+            if let Some(conn) = conn {
+                let item: Option<(String, Option<String>, bool, Option<String>)> = conn
+                    .query_row(
+                        "SELECT title, due_date, picked_up, google_event_id FROM shopee_packages WHERE id = ?1",
+                        rusqlite::params![id2],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                    )
+                    .ok();
+                if let Some((title, due_date, picked_up, event_id)) = item {
+                    crate::server::google::sync_item(
+                        &id2,
+                        &title,
+                        due_date.as_deref(),
+                        picked_up,
+                        event_id.as_deref(),
+                    ).await;
+                }
+            }
+        });
+    }
+
     Ok(())
 }
 
@@ -382,11 +633,29 @@ pub async fn delete_shopee(id: String) -> Result<(), ServerFnError> {
     let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Read google_event_id before deleting
+    let event_id: Option<String> = conn
+        .query_row(
+            "SELECT google_event_id FROM shopee_packages WHERE id = ?1 AND user_id = ?2",
+            rusqlite::params![id, user_id],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+
     conn.execute(
         "DELETE FROM shopee_packages WHERE id = ?1 AND user_id = ?2",
         rusqlite::params![id, user_id],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // Fire-and-forget: delete Calendar event
+    if let Some(eid) = event_id {
+        let eid2 = eid.clone();
+        tokio::spawn(async move {
+            crate::server::google::sync_item("", "", None, true, Some(&eid2)).await;
+        });
+    }
 
     Ok(())
 }
@@ -420,7 +689,7 @@ pub async fn find_matching_packages(titles: Vec<String>) -> Result<Vec<ShopeePac
     for title in &titles {
         let mut stmt = conn
             .prepare(
-                "SELECT id, title, store, code, picked_up, created_at, completed_by
+                "SELECT id, title, store, code, due_date, picked_up, created_at, completed_by
                  FROM shopee_packages
                  WHERE user_id = ?1 AND picked_up = 0 AND title LIKE '%' || ?2 || '%'"
             )
@@ -433,9 +702,10 @@ pub async fn find_matching_packages(titles: Vec<String>) -> Result<Vec<ShopeePac
                     title: row.get(1)?,
                     store: row.get(2)?,
                     code: row.get(3)?,
-                    picked_up: row.get(4)?,
-                    created_at: row.get(5)?,
-                    completed_by: row.get(6)?,
+                    due_date: row.get(4)?,
+                    picked_up: row.get(5)?,
+                    created_at: row.get(6)?,
+                    completed_by: row.get(7)?,
                 })
             })
             .map_err(|e| ServerFnError::new(e.to_string()))?

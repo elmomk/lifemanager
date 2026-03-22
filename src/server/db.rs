@@ -105,6 +105,19 @@ pub fn init() {
         }
     }
 
+    // Add due_date and google_event_id columns to shopee_packages
+    for sql in [
+        "ALTER TABLE shopee_packages ADD COLUMN due_date TEXT",
+        "ALTER TABLE shopee_packages ADD COLUMN google_event_id TEXT",
+    ] {
+        if let Err(e) = conn.execute_batch(sql) {
+            let msg = e.to_string();
+            if !msg.contains("duplicate column") {
+                eprintln!("WARNING: migration failed: {msg}");
+            }
+        }
+    }
+
     // One-time migration: consolidate all users to 'default'
     run_once(&conn, "consolidate_users",
         "UPDATE checklist_items SET user_id = 'default' WHERE user_id != 'default';

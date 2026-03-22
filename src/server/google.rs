@@ -239,15 +239,21 @@ pub async fn sync_item(item_id: &str, title: &str, date: Option<&str>, done: boo
             // Completed → delete event if exists
             if let Some(eid) = google_event_id {
                 delete_event(eid).await?;
-            } else if let Some(eid) = find_event_by_item_id(item_id).await? {
-                delete_event(&eid).await?;
+            } else if !item_id.is_empty() {
+                if let Some(eid) = find_event_by_item_id(item_id).await? {
+                    delete_event(&eid).await?;
+                }
             }
-            // Clear google_event_id in DB
+            // Clear google_event_id in DB (try both tables)
             let conn = super::db::pool().get().map_err(|e| e.to_string())?;
-            conn.execute(
+            let _ = conn.execute(
                 "UPDATE checklist_items SET google_event_id = NULL WHERE id = ?1",
                 rusqlite::params![item_id],
-            ).map_err(|e| e.to_string())?;
+            );
+            let _ = conn.execute(
+                "UPDATE shopee_packages SET google_event_id = NULL WHERE id = ?1",
+                rusqlite::params![item_id],
+            );
         } else if let Some(date) = date {
             if let Some(eid) = google_event_id {
                 // Update existing event
@@ -255,12 +261,18 @@ pub async fn sync_item(item_id: &str, title: &str, date: Option<&str>, done: boo
             } else {
                 // Create new event
                 let event_id = create_event(title, date, item_id).await?;
-                // Store event ID in DB
+                // Store event ID in DB (try both tables)
                 let conn = super::db::pool().get().map_err(|e| e.to_string())?;
-                conn.execute(
+                let affected = conn.execute(
                     "UPDATE checklist_items SET google_event_id = ?2 WHERE id = ?1",
                     rusqlite::params![item_id, event_id],
                 ).map_err(|e| e.to_string())?;
+                if affected == 0 {
+                    conn.execute(
+                        "UPDATE shopee_packages SET google_event_id = ?2 WHERE id = ?1",
+                        rusqlite::params![item_id, event_id],
+                    ).map_err(|e| e.to_string())?;
+                }
             }
         }
         Ok(())
