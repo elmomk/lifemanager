@@ -108,11 +108,11 @@ pub fn ChecklistPage(
 
     let (btn_class, input_class) = match accent_color {
         "green" => (
-            "w-full bg-neon-green/20 text-neon-green border border-neon-green/40 rounded-lg px-4 py-2.5 text-xs font-bold tracking-wider uppercase hover:bg-neon-green/30 transition-colors glow-green disabled:opacity-50",
+            "w-full bg-neon-green/20 text-neon-green border border-neon-green/40 rounded-lg px-4 py-3 text-xs font-bold tracking-wider uppercase hover:bg-neon-green/30 transition-colors glow-green disabled:opacity-50",
             "w-full bg-cyber-dark border border-cyber-border rounded-lg px-4 py-2.5 text-sm text-cyber-text outline-none focus:border-neon-green/60 font-mono",
         ),
         _ => (
-            "w-full bg-neon-cyan/20 text-neon-cyan border border-neon-cyan/40 rounded-lg px-4 py-2.5 text-xs font-bold tracking-wider uppercase hover:bg-neon-cyan/30 transition-colors glow-cyan disabled:opacity-50",
+            "w-full bg-neon-cyan/20 text-neon-cyan border border-neon-cyan/40 rounded-lg px-4 py-3 text-xs font-bold tracking-wider uppercase hover:bg-neon-cyan/30 transition-colors glow-cyan disabled:opacity-50",
             "w-full bg-cyber-dark border border-cyber-border rounded-lg px-4 py-2.5 text-sm text-cyber-text outline-none focus:border-neon-cyan/60 font-mono",
         ),
     };
@@ -197,8 +197,26 @@ pub fn ChecklistPage(
 
             // Items list
             div { class: "space-y-0",
-                for item in items.read().iter() {
-                    { render_checklist_item(item.clone(), done_label, category, reload, reload_chips, error_msg) }
+                {
+                    let all_items = items.read().clone();
+                    let pending: Vec<_> = all_items.iter().filter(|i| !i.done).cloned().collect();
+                    let done_items: Vec<_> = all_items.iter().filter(|i| i.done).cloned().collect();
+                    let has_both = !pending.is_empty() && !done_items.is_empty();
+                    rsx! {
+                        for item in pending.iter() {
+                            { render_checklist_item(item.clone(), done_label, category, reload, reload_chips, error_msg) }
+                        }
+                        if has_both {
+                            div { class: "flex items-center gap-3 py-2 px-1",
+                                div { class: "flex-1 h-px bg-cyber-border/40" }
+                                span { class: "text-[9px] text-cyber-dim/50 tracking-[0.3em] uppercase", "DONE" }
+                                div { class: "flex-1 h-px bg-cyber-border/40" }
+                            }
+                        }
+                        for item in done_items.iter() {
+                            { render_checklist_item(item.clone(), done_label, category, reload, reload_chips, error_msg) }
+                        }
+                    }
                 }
                 if items.read().is_empty() {
                     div { class: "text-center py-16",
@@ -271,7 +289,7 @@ fn render_checklist_item(
                     div { class: "text-right",
                         span { class: "text-xs text-neon-green font-bold tracking-wider", "{done_label}" }
                         if let Some(by) = &item.completed_by {
-                            p { class: "text-[10px] text-cyber-dim", "{by}" }
+                            p { class: "text-[10px] text-cyber-dim", "by {by}" }
                         }
                     }
                 }

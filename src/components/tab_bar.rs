@@ -9,7 +9,7 @@ pub fn TabBar() -> Element {
 
     let tabs: Vec<(Route, &str, Element)> = vec![
         (Route::Todos {}, "Todos", rsx! { CheckSquareIcon { class: "w-5 h-5".to_string() } }),
-        (Route::Groceries {}, "Shop", rsx! { ShoppingCartIcon { class: "w-5 h-5".to_string() } }),
+        (Route::Groceries {}, "Grocery", rsx! { ShoppingCartIcon { class: "w-5 h-5".to_string() } }),
         (Route::Shopee {}, "Shopee", rsx! { PackageIcon { class: "w-5 h-5".to_string() } }),
         (Route::Watchlist {}, "Watch", rsx! { TvIcon { class: "w-5 h-5".to_string() } }),
         (Route::Period {}, "Cycle", rsx! { HeartIcon { class: "w-5 h-5".to_string() } }),
@@ -37,7 +37,7 @@ fn render_tab(target: Route, label: &str, icon: Element, current: &Route) -> Ele
     rsx! {
         Link {
             to: target,
-            class: "flex flex-col items-center gap-0.5 px-2 py-1 {color} transition-colors",
+            class: "flex flex-col items-center gap-0.5 px-2 py-2.5 {color} transition-colors",
             {icon}
             span { class: "text-[10px] font-medium tracking-wider uppercase", "{label}" }
         }

@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 
 use crate::components::icons::*;
 
-const THRESHOLD: f64 = 100.0;
+const THRESHOLD: f64 = 72.0;
 
 #[component]
 pub fn SwipeItem(

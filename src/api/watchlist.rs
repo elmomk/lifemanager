@@ -164,6 +164,46 @@ pub async fn delete_watchlist(id: String) -> Result<(), ServerFnError> {
 
 // --- Phase 1: Progress Tracking ---
 
+/// Returns a map of season_number -> episodes_watched for the given item
+#[server(headers: axum::http::HeaderMap)]
+pub async fn get_season_progress(
+    item_id: String,
+) -> Result<std::collections::HashMap<i32, i32>, ServerFnError> {
+    use crate::server::{auth, db};
+
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // Verify ownership
+    let _exists: i32 = conn
+        .query_row(
+            "SELECT 1 FROM watch_items WHERE id = ?1 AND user_id = ?2",
+            rusqlite::params![item_id, user_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT season, COUNT(*) FROM watch_progress WHERE watch_item_id = ?1 GROUP BY season",
+        )
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    let rows = stmt
+        .query_map(rusqlite::params![item_id], |row| {
+            Ok((row.get::<_, i32>(0)?, row.get::<_, i32>(1)?))
+        })
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    let mut map = std::collections::HashMap::new();
+    for r in rows {
+        let (season, count) = r.map_err(|e| ServerFnError::new(e.to_string()))?;
+        map.insert(season, count);
+    }
+
+    Ok(map)
+}
+
 #[server(headers: axum::http::HeaderMap)]
 pub async fn update_watch_progress(
     item_id: String,
@@ -798,4 +838,70 @@ pub async fn get_up_next() -> Result<Vec<WatchItem>, ServerFnError> {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
     Ok(items)
+}
+
+/// Recommendations aggregated from recently completed series/anime
+#[server(headers: axum::http::HeaderMap)]
+pub async fn get_finished_recommendations() -> Result<Vec<(String, MediaType, Vec<MediaRecommendation>)>, ServerFnError> {
+    use crate::server::{auth, db, media_api};
+
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // Get last 5 completed series/anime with external IDs
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, text, media_type, tmdb_id, jikan_id FROM watch_items
+             WHERE user_id = ?1 AND status = 'completed'
+               AND media_type IN ('Series', 'Anime')
+               AND (tmdb_id IS NOT NULL OR jikan_id IS NOT NULL)
+             ORDER BY created_at DESC
+             LIMIT 5",
+        )
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    let sources: Vec<(String, String, String, Option<i32>, Option<i32>)> = stmt
+        .query_map(rusqlite::params![user_id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })
+        .map_err(|e| ServerFnError::new(e.to_string()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if sources.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let existing_ids = load_existing_external_ids(&conn, &user_id)?;
+
+    let mut results = Vec::new();
+    for (_id, title, mt_str, tmdb_id, jikan_id) in sources {
+        let media_type = MediaType::from_str(&mt_str);
+        let mut recs = if let Some(jikan_id) = jikan_id {
+            media_api::jikan_recommendations(jikan_id).await.unwrap_or_default()
+        } else if let Some(tmdb_id) = tmdb_id {
+            media_api::tmdb_recommendations(tmdb_id, &media_type).await.unwrap_or_default()
+        } else {
+            continue;
+        };
+
+        // Filter out items already in list, limit per source
+        for rec in &mut recs {
+            rec.already_in_list = existing_ids.contains(&rec.external_id);
+        }
+        recs.retain(|r| !r.already_in_list);
+        recs.truncate(5);
+
+        if !recs.is_empty() {
+            results.push((title, media_type, recs));
+        }
+    }
+
+    Ok(results)
 }

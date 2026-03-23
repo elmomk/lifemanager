@@ -77,6 +77,8 @@ pub fn Watchlist() -> Element {
     let explore_results = use_signal(Vec::<MediaSearchResult>::new);
     let explore_type = use_signal(|| MediaType::Movie);
     let watch_settings = use_signal(WatchSettings::default);
+    let mut finished_recs = use_signal(Vec::<(String, MediaType, Vec<MediaRecommendation>)>::new);
+    let mut finished_recs_loaded = use_signal(|| false);
 
     let reload = move || {
         spawn(async move {
@@ -102,6 +104,14 @@ pub fn Watchlist() -> Element {
                     }
                     sync_status.set(SyncStatus::CachedOnly);
                 }
+            }
+
+            // Load finished recommendations for Up Next tab
+            if *active_filter.read() == FilterTab::UpNext {
+                if let Ok(recs) = api::get_finished_recommendations().await {
+                    finished_recs.set(recs);
+                }
+                finished_recs_loaded.set(true);
             }
         });
     };
@@ -204,13 +214,13 @@ pub fn Watchlist() -> Element {
                 div { class: "flex-1 flex gap-1.5 bg-cyber-card/50 rounded-lg p-1",
                     {render_filter_tab("All", FilterTab::All, active_filter.clone(), reload)}
                     {render_filter_tab("Watching", FilterTab::Watching, active_filter.clone(), reload)}
-                    {render_filter_tab("Up Next", FilterTab::UpNext, active_filter.clone(), reload)}
+                    {render_filter_tab("Next", FilterTab::UpNext, active_filter.clone(), reload)}
                     {render_filter_tab("Done", FilterTab::Done, active_filter.clone(), reload)}
                     {render_filter_tab("Explore", FilterTab::Explore, active_filter.clone(), reload)}
                 }
                 Link {
                     to: Route::WatchSettings {},
-                    class: "p-2 text-cyber-dim hover:text-neon-cyan transition-colors flex-shrink-0",
+                    class: "w-11 h-11 flex items-center justify-center text-cyber-dim hover:text-neon-cyan transition-colors flex-shrink-0",
                     title: "Watch Settings",
                     svg {
                         class: "w-4 h-4",
@@ -336,6 +346,23 @@ pub fn Watchlist() -> Element {
                         }
                     }
                 }
+
+                // Recommendations from finished series (Up Next tab only)
+                if *active_filter.read() == FilterTab::UpNext && *finished_recs_loaded.read() && !finished_recs.read().is_empty() {
+                    div { class: "mt-6 space-y-4",
+                        p { class: "text-[10px] text-cyber-dim tracking-[0.3em] uppercase", "BECAUSE YOU FINISHED" }
+                        for (source_title, media_type, recs) in finished_recs.read().iter() {
+                            div { class: "bg-cyber-card/50 border border-cyber-border/50 rounded-xl p-3 space-y-2",
+                                p { class: "text-xs text-neon-cyan font-bold tracking-wider truncate", "{source_title}" }
+                                div { class: "space-y-1",
+                                    for rec in recs.iter() {
+                                        {render_recommendation(rec.clone(), media_type.clone(), reload, error_msg)}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -356,7 +383,7 @@ fn render_filter_tab(
 
     rsx! {
         button {
-            class: "flex-1 px-2 py-3 rounded-md text-[10px] font-bold tracking-wide uppercase border {bg} transition-colors",
+            class: "flex-1 px-1 py-3.5 rounded-md text-[9px] font-bold tracking-wide uppercase border {bg} transition-colors",
             onclick: move |_| {
                 active.set(tab.clone());
                 reload();
@@ -1003,8 +1030,25 @@ fn render_item(
                             {status_badge(&item.status)}
                             if let Some(by) = &item.completed_by {
                                 if done {
-                                    p { class: "text-[10px] text-cyber-dim", "{by}" }
+                                    p { class: "text-[10px] text-cyber-dim", "by {by}" }
                                 }
+                            }
+                            // Expand indicator
+                            {
+                                let rotate = if is_expanded { "rotate-180" } else { "" };
+                                rsx! { svg {
+                                    class: "w-3 h-3 text-cyber-dim/40 transition-transform {rotate}",
+                                    xmlns: "http://www.w3.org/2000/svg",
+                                    fill: "none",
+                                    view_box: "0 0 24 24",
+                                    stroke: "currentColor",
+                                    stroke_width: "2",
+                                    path {
+                                        stroke_linecap: "round",
+                                        stroke_linejoin: "round",
+                                        d: "M19 9l-7 7-7-7",
+                                    }
+                                }}
                             }
                         }
                     }
@@ -1045,6 +1089,35 @@ fn DetailPanel(
         item.current_episode,
         &item.season_data,
     );
+
+    // Parse season_data to get total seasons list
+    let season_map: Option<serde_json::Map<String, serde_json::Value>> = item
+        .season_data
+        .as_ref()
+        .and_then(|sd| serde_json::from_str(sd).ok());
+
+    let num_seasons = season_map
+        .as_ref()
+        .map(|m| m.keys().filter_map(|k| k.parse::<i32>().ok()).max().unwrap_or(0))
+        .or(item.total_seasons)
+        .unwrap_or(1);
+
+    // Per-season progress (loaded async)
+    let mut season_progress = use_signal(std::collections::HashMap::<i32, i32>::new);
+    let mut season_progress_loaded = use_signal(|| false);
+
+    use_effect({
+        let item_id = item_id.clone();
+        move || {
+            let item_id = item_id.clone();
+            spawn(async move {
+                if let Ok(progress) = api::get_season_progress(item_id).await {
+                    season_progress.set(progress);
+                }
+                season_progress_loaded.set(true);
+            });
+        }
+    });
 
     // Streaming providers
     let mut providers = use_signal(Vec::<StreamingProvider>::new);
@@ -1096,9 +1169,10 @@ fn DetailPanel(
 
             // Quick actions for episodic content
             if is_episodic {
-                div { class: "flex gap-2",
+                div { class: "space-y-2",
+                    // +1 episode button
                     button {
-                        class: "flex-1 bg-neon-cyan/15 text-neon-cyan border border-neon-cyan/30 rounded-lg py-2 text-xs font-bold tracking-wider hover:bg-neon-cyan/25 transition-colors",
+                        class: "w-full bg-neon-cyan/15 text-neon-cyan border border-neon-cyan/30 rounded-lg py-2 text-xs font-bold tracking-wider hover:bg-neon-cyan/25 transition-colors",
                         onclick: {
                             let item_id = item_id2.clone();
                             move |_| {
@@ -1113,22 +1187,60 @@ fn DetailPanel(
                         },
                         "+1 EP (S{next_season}E{next_episode})"
                     }
-                    button {
-                        class: "bg-neon-green/15 text-neon-green border border-neon-green/30 rounded-lg py-2 px-3 text-xs font-bold tracking-wider hover:bg-neon-green/25 transition-colors",
-                        onclick: {
-                            let item_id = item_id2.clone();
-                            let cur_s = item.current_season.unwrap_or(1).max(next_season);
-                            move |_| {
-                                let item_id = item_id.clone();
-                                spawn(async move {
-                                    match api::complete_season(item_id, cur_s).await {
-                                        Ok(()) => reload(),
-                                        Err(e) => error_msg.set(Some(format!("Failed: {e}"))),
+
+                    // Season chips — mark entire seasons as done
+                    if num_seasons > 0 {
+                        div {
+                            p { class: "text-[10px] text-cyber-dim tracking-wider uppercase mb-1.5", "MARK SEASON DONE" }
+                            div { class: "flex flex-wrap gap-1.5",
+                                for s in 1..=num_seasons {
+                                    {
+                                        let item_id_s = item_id2.clone();
+                                        let eps_total = season_map.as_ref()
+                                            .and_then(|m| m.get(&s.to_string())?.as_i64().map(|v| v as i32))
+                                            .unwrap_or(0);
+                                        let eps_watched = *season_progress.read().get(&s).unwrap_or(&0);
+                                        let is_complete = eps_total > 0 && eps_watched >= eps_total;
+                                        let is_partial = eps_watched > 0 && !is_complete;
+
+                                        let chip_class = if is_complete {
+                                            "bg-neon-green/25 text-neon-green border-neon-green/50"
+                                        } else if is_partial {
+                                            "bg-neon-orange/15 text-neon-orange border-neon-orange/30"
+                                        } else {
+                                            "bg-cyber-card/60 text-cyber-dim border-cyber-border/40 hover:bg-neon-green/15 hover:text-neon-green hover:border-neon-green/30"
+                                        };
+
+                                        let label = if is_complete {
+                                            format!("\u{2713} S{s}")
+                                        } else if is_partial {
+                                            format!("S{s} {eps_watched}/{eps_total}")
+                                        } else if eps_total > 0 {
+                                            format!("S{s} ({}ep)", eps_total)
+                                        } else {
+                                            format!("S{s}")
+                                        };
+
+                                        rsx! {
+                                            button {
+                                                class: "border rounded-md px-2.5 py-1 text-[11px] font-bold tracking-wider transition-colors {chip_class}",
+                                                disabled: is_complete,
+                                                onclick: move |_| {
+                                                    let item_id = item_id_s.clone();
+                                                    spawn(async move {
+                                                        match api::complete_season(item_id, s).await {
+                                                            Ok(()) => reload(),
+                                                            Err(e) => error_msg.set(Some(format!("Failed: {e}"))),
+                                                        }
+                                                    });
+                                                },
+                                                "{label}"
+                                            }
+                                        }
                                     }
-                                });
+                                }
                             }
-                        },
-                        "\u{2713} S{next_season}"
+                        }
                     }
                 }
             }

@@ -53,6 +53,8 @@ pub fn Period() -> Element {
         reload();
     });
 
+    let cycle_count = cycles.read().len();
+
     let prediction = {
         let c = cycles.read();
         Cycle::predict_next_start(&c)
@@ -82,6 +84,16 @@ pub fn Period() -> Element {
                                 "IN {days} DAYS"
                             } else {
                                 { format!("{} DAYS AGO", days.abs()) }
+                            }
+                        }
+                    }
+                    if cycle_count < 3 {
+                        {
+                            let suffix = if cycle_count != 1 { "S" } else { "" };
+                            rsx! {
+                                p { class: "text-[10px] text-cyber-dim/50 mt-2 tracking-wider",
+                                    "BASED ON {cycle_count} CYCLE{suffix} \u{2022} MORE DATA = BETTER ACCURACY"
+                                }
                             }
                         }
                     }
@@ -133,7 +145,7 @@ pub fn Period() -> Element {
                 div { class: "bg-cyber-card/80 border border-cyber-border rounded-xl p-4 space-y-3",
                     div { class: "flex gap-2",
                         div { class: "flex-1",
-                            label { class: "text-[10px] text-cyber-dim tracking-widest uppercase mb-1 block", "START DATE" }
+                            label { class: "text-xs text-cyber-dim tracking-widest uppercase mb-1 block", "START DATE" }
                             input {
                                 class: "w-full bg-cyber-dark border border-cyber-border rounded-lg px-4 py-2 text-sm text-cyber-text font-mono",
                                 r#type: "date",
@@ -142,7 +154,7 @@ pub fn Period() -> Element {
                             }
                         }
                         div { class: "flex-1",
-                            label { class: "text-[10px] text-cyber-dim tracking-widest uppercase mb-1 block", "END DATE" }
+                            label { class: "text-xs text-cyber-dim tracking-widest uppercase mb-1 block", "END DATE" }
                             input {
                                 class: "w-full bg-cyber-dark border border-cyber-border rounded-lg px-4 py-2 text-sm text-cyber-text font-mono",
                                 r#type: "date",
@@ -163,12 +175,12 @@ pub fn Period() -> Element {
                     }
                     div { class: "flex gap-2",
                         button {
-                            class: "flex-1 bg-cyber-dark border border-cyber-border rounded-lg px-4 py-2 text-xs font-medium tracking-wider text-cyber-dim",
+                            class: "flex-1 bg-cyber-dark border border-cyber-border rounded-lg px-4 py-3 text-xs font-medium tracking-wider text-cyber-dim",
                             onclick: move |_| show_form.set(false),
                             "CANCEL"
                         }
                         button {
-                            class: "flex-1 bg-neon-pink/20 text-neon-pink border border-neon-pink/40 rounded-lg px-4 py-2 text-xs font-bold tracking-wider hover:bg-neon-pink/30 transition-colors glow-pink",
+                            class: "flex-1 bg-neon-pink/20 text-neon-pink border border-neon-pink/40 rounded-lg px-4 py-3 text-xs font-bold tracking-wider hover:bg-neon-pink/30 transition-colors glow-pink",
                             onclick: move |_| {
                                 let start = input_date.read().clone();
                                 if NaiveDate::parse_from_str(&start, "%Y-%m-%d").is_ok() {

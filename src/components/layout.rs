@@ -42,7 +42,7 @@ pub fn AppLayout() -> Element {
             }
 
             // Content
-            main { class: "pt-14 pb-16 max-w-lg mx-auto",
+            main { class: "pt-14 pb-20 max-w-lg mx-auto",
                 Outlet::<Route> {}
             }
 

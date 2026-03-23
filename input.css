@@ -33,7 +33,7 @@
   --color-neon-green: #00ff41;
   --color-neon-orange: #ff8c00;
   --color-neon-purple: #bf5af2;
-  --color-neon-pink: #ff2d78;
+  --color-neon-pink: #ff79c6;
   --color-neon-yellow: #ffdd00;
   --color-cyber-text: #e0e0e8;
   --color-cyber-dim: #5a5a7a;
@@ -81,7 +81,7 @@
 }
 
 .glow-pink {
-  box-shadow: 0 0 8px rgba(255, 45, 120, 0.3), inset 0 0 8px rgba(255, 45, 120, 0.05);
+  box-shadow: 0 0 8px rgba(255, 121, 198, 0.3), inset 0 0 8px rgba(255, 121, 198, 0.05);
 }
 
 .text-glow-cyan {
@@ -97,7 +97,7 @@
 }
 
 .text-glow-pink {
-  text-shadow: 0 0 8px rgba(255, 45, 120, 0.5);
+  text-shadow: 0 0 8px rgba(255, 121, 198, 0.5);
 }
 
 /* Cyberpunk scrollbar */

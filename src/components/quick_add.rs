@@ -24,7 +24,7 @@ pub fn QuickAdd(
                 // Edit toggle button
                 if has_delete {
                     button {
-                        class: "shrink-0 w-7 h-7 flex items-center justify-center rounded-md border transition-colors {chip_text}",
+                        class: "shrink-0 w-9 h-9 flex items-center justify-center rounded-md border transition-colors {chip_text}",
                         class: if editing() { "bg-neon-magenta/20 border-neon-magenta/40 !text-neon-magenta" } else { "{chip_bg} {chip_border}" },
                         onclick: move |_| editing.set(!editing()),
                         if editing() {

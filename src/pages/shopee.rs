@@ -191,7 +191,7 @@ pub fn Shopee() -> Element {
                         }
                     }
                     button {
-                        class: "w-full bg-neon-orange/20 text-neon-orange border border-neon-orange/40 rounded-lg px-4 py-2 text-xs font-bold tracking-wider uppercase hover:bg-neon-orange/30 transition-colors glow-orange",
+                        class: "w-full bg-neon-orange/20 text-neon-orange border border-neon-orange/40 rounded-lg px-4 py-3 text-xs font-bold tracking-wider uppercase hover:bg-neon-orange/30 transition-colors glow-orange",
                         r#type: "submit",
                         "ADD PACKAGE"
                     }
@@ -261,17 +261,17 @@ fn render_package(
             },
             div { class: "space-y-1",
                 div { class: "flex items-center gap-2",
-                    p { class: "text-sm font-medium flex-1", "{pkg.title}" }
+                    p { class: "text-sm font-medium flex-1 min-w-0 truncate", "{pkg.title}" }
                     if picked_up {
                         div { class: "text-right",
                             span { class: "text-xs text-neon-green font-bold tracking-wider", "PICKED UP" }
                             if let Some(by) = &pkg.completed_by {
-                                p { class: "text-[10px] text-cyber-dim", "{by}" }
+                                p { class: "text-[10px] text-cyber-dim", "by {by}" }
                             }
                         }
                     }
                 }
-                div { class: "flex gap-2 text-xs text-cyber-dim",
+                div { class: "flex flex-wrap gap-2 text-xs text-cyber-dim",
                     if let Some(store) = &pkg.store {
                         span { class: "bg-cyber-dark border border-cyber-border px-2 py-0.5 rounded font-mono", "{store}" }
                     }
