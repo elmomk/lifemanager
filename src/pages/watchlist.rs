@@ -56,9 +56,7 @@ fn compute_next_episode(
 #[derive(Clone, PartialEq)]
 enum FilterTab {
     All,
-    Watching,
     UpNext,
-    Done,
     Explore,
 }
 
@@ -193,11 +191,9 @@ pub fn Watchlist() -> Element {
             items
                 .read()
                 .iter()
-                .filter(|item| match filter {
+                .filter(|_| match filter {
                     FilterTab::All => true,
-                    FilterTab::Watching => item.status == WatchStatus::InProgress,
                     FilterTab::UpNext => true, // Already filtered by server
-                    FilterTab::Done => item.status == WatchStatus::Completed,
                     FilterTab::Explore => unreachable!(),
                 })
                 .cloned()
@@ -213,9 +209,7 @@ pub fn Watchlist() -> Element {
             div { class: "flex items-center gap-1.5",
                 div { class: "flex-1 flex gap-1.5 bg-cyber-card/50 rounded-lg p-1",
                     {render_filter_tab("All", FilterTab::All, active_filter.clone(), reload)}
-                    {render_filter_tab("Watching", FilterTab::Watching, active_filter.clone(), reload)}
-                    {render_filter_tab("Next", FilterTab::UpNext, active_filter.clone(), reload)}
-                    {render_filter_tab("Done", FilterTab::Done, active_filter.clone(), reload)}
+                    {render_filter_tab("Up Next", FilterTab::UpNext, active_filter.clone(), reload)}
                     {render_filter_tab("Explore", FilterTab::Explore, active_filter.clone(), reload)}
                 }
                 Link {
@@ -326,9 +320,7 @@ pub fn Watchlist() -> Element {
                             p { class: "text-2xl mb-3 opacity-30", "\u{1F3AC}" }
                             p { class: "text-xs tracking-[0.3em] uppercase text-cyber-dim",
                                 {match *active_filter.read() {
-                                    FilterTab::UpNext => "Nothing up next",
-                                    FilterTab::Watching => "Nothing in progress",
-                                    FilterTab::Done => "Nothing completed yet",
+                                    FilterTab::UpNext => "No recommendations yet — start watching something!",
                                     FilterTab::All => "Nothing to watch yet",
                                     FilterTab::Explore => "",
                                 }}
