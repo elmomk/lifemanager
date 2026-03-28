@@ -98,7 +98,25 @@ pub fn init() {
             user_id TEXT PRIMARY KEY,
             streaming_providers TEXT NOT NULL DEFAULT '[]',
             filter_by_provider INTEGER NOT NULL DEFAULT 0
-        );"
+        );
+        CREATE TABLE IF NOT EXISTS cycle_settings (
+            user_id TEXT PRIMARY KEY,
+            average_cycle_length INTEGER NOT NULL DEFAULT 28,
+            average_period_duration INTEGER NOT NULL DEFAULT 5,
+            on_birth_control INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS mood_logs (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            mood INTEGER NOT NULL,
+            energy INTEGER NOT NULL,
+            libido INTEGER NOT NULL,
+            notes TEXT,
+            created_at REAL NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_mood_user_date ON mood_logs(user_id, date);
+        CREATE INDEX IF NOT EXISTS idx_mood_user ON mood_logs(user_id);"
     )
     .expect("Failed to run migrations");
 

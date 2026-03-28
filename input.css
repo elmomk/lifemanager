@@ -40,6 +40,23 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
 }
 
+/* Safelist: dynamic Tailwind classes used via runtime interpolation in Rust/Dioxus.
+   These must appear literally for Tailwind v4's scanner to detect them. */
+.safelist {
+  /* Phase dashboard colors */
+  @apply
+    text-neon-pink text-neon-green text-neon-orange text-neon-purple text-neon-magenta
+    border-neon-pink/30 border-neon-green/30 border-neon-orange/30 border-neon-purple/30 border-neon-magenta/30
+    border-neon-pink/15 border-neon-green/15 border-neon-orange/15 border-neon-purple/15 border-neon-magenta/15
+    border-neon-pink/20 border-neon-green/20 border-neon-orange/20 border-neon-purple/20 border-neon-magenta/20
+    bg-neon-pink/60 bg-neon-green/60 bg-neon-orange/60 bg-neon-purple/60 bg-neon-magenta/60
+    bg-neon-pink/80 bg-neon-green/80 bg-neon-orange/80 bg-neon-purple/80 bg-neon-magenta/80
+    bg-neon-pink/15 bg-neon-green/15 bg-neon-orange/15 bg-neon-purple/15 bg-neon-magenta/15
+    bg-neon-pink/8 bg-neon-green/8 bg-neon-orange/8 bg-neon-purple/8 bg-neon-magenta/8
+    bg-neon-pink/40 bg-neon-green/40 bg-neon-orange/40 bg-neon-purple/40 bg-neon-magenta/40
+    bg-neon-pink/10 bg-neon-green/10 bg-neon-orange/10 bg-neon-purple/10 bg-neon-magenta/10;
+}
+
 /* Scanline overlay effect */
 .scanlines::after {
   content: '';

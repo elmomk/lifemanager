@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use crate::models::Cycle;
+use crate::models::{Cycle, CycleSettings};
 
 #[server(headers: axum::http::HeaderMap)]
 pub async fn list_cycles() -> Result<Vec<Cycle>, ServerFnError> {
@@ -86,6 +86,56 @@ pub async fn delete_cycle(id: String) -> Result<(), ServerFnError> {
     conn.execute(
         "DELETE FROM cycles WHERE id = ?1 AND user_id = ?2",
         rusqlite::params![id, user_id],
+    )
+    .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    Ok(())
+}
+
+#[server(headers: axum::http::HeaderMap)]
+pub async fn get_cycle_settings() -> Result<CycleSettings, ServerFnError> {
+    use crate::server::{auth, db};
+
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    let result = conn.query_row(
+        "SELECT average_cycle_length, average_period_duration, on_birth_control
+         FROM cycle_settings WHERE user_id = ?1",
+        rusqlite::params![user_id],
+        |row| {
+            Ok(CycleSettings {
+                average_cycle_length: row.get(0)?,
+                average_period_duration: row.get(1)?,
+                on_birth_control: row.get(2)?,
+            })
+        },
+    );
+
+    match result {
+        Ok(settings) => Ok(settings),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(CycleSettings::default()),
+        Err(e) => Err(ServerFnError::new(e.to_string())),
+    }
+}
+
+#[server(headers: axum::http::HeaderMap)]
+pub async fn save_cycle_settings(settings: CycleSettings) -> Result<(), ServerFnError> {
+    use crate::server::{auth, db};
+
+    let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    let bc: i32 = if settings.on_birth_control { 1 } else { 0 };
+
+    conn.execute(
+        "INSERT INTO cycle_settings (user_id, average_cycle_length, average_period_duration, on_birth_control)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(user_id) DO UPDATE SET
+             average_cycle_length = excluded.average_cycle_length,
+             average_period_duration = excluded.average_period_duration,
+             on_birth_control = excluded.on_birth_control",
+        rusqlite::params![user_id, settings.average_cycle_length, settings.average_period_duration, bc],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
 
