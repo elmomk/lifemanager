@@ -130,10 +130,15 @@ fn NotificationDropdown(
                             other => other,
                         };
                         let elapsed = format_elapsed(notif.created_at);
+                        let display_actor = if notif.actor.starts_with("_system:") {
+                            notif.actor.trim_start_matches("_system:").to_string()
+                        } else {
+                            notif.actor.clone()
+                        };
                         rsx! {
                             div { class: "px-3 py-2 border-b border-cyber-border/50 hover:bg-cyber-card/30",
                                 div { class: "text-xs text-cyber-text leading-snug",
-                                    span { class: "font-semibold text-neon-green", "{notif.actor}" }
+                                    span { class: "font-semibold text-neon-green", "{display_actor}" }
                                     " {action_label} "
                                     span { class: "text-cyber-text/80", "{notif.item_text}" }
                                 }

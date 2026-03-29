@@ -7,10 +7,11 @@ pub async fn list_notifications() -> Result<NotificationStatus, ServerFnError> {
     use crate::models::notification::Notification;
     use crate::server::{auth, db};
 
+    auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
     let display_name = auth::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // Check if user has opted in (default: enabled)
+    // Check if user has opted in (default: disabled)
     let enabled: bool = conn
         .query_row(
             "SELECT enabled FROM notification_settings WHERE user_name = ?1",
@@ -77,6 +78,7 @@ pub async fn list_notifications() -> Result<NotificationStatus, ServerFnError> {
 pub async fn mark_notifications_read() -> Result<(), ServerFnError> {
     use crate::server::{auth, db};
 
+    auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
     let display_name = auth::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -95,6 +97,7 @@ pub async fn mark_notifications_read() -> Result<(), ServerFnError> {
 pub async fn set_notification_enabled(enabled: bool) -> Result<(), ServerFnError> {
     use crate::server::{auth, db};
 
+    auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
     let display_name = auth::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -112,6 +115,7 @@ pub async fn set_notification_enabled(enabled: bool) -> Result<(), ServerFnError
 pub async fn get_notification_enabled() -> Result<bool, ServerFnError> {
     use crate::server::{auth, db};
 
+    auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
     let display_name = auth::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -133,6 +137,7 @@ pub async fn get_notification_enabled() -> Result<bool, ServerFnError> {
 pub async fn clear_notifications() -> Result<(), ServerFnError> {
     use crate::server::{auth, db};
 
+    auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
     let display_name = auth::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -148,9 +153,17 @@ pub async fn clear_notifications() -> Result<(), ServerFnError> {
 }
 
 /// Returns the VAPID public key so the client can subscribe to push.
-#[server]
+#[server(headers: axum::http::HeaderMap)]
 pub async fn get_vapid_public_key() -> Result<String, ServerFnError> {
-    Ok(std::env::var("VAPID_PUBLIC_KEY").unwrap_or_default())
+    use crate::server::auth;
+
+    auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    let key = std::env::var("VAPID_PUBLIC_KEY").unwrap_or_default();
+    // Validate base64url format to prevent injection when interpolated into JS
+    if !key.is_empty() && !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_') {
+        return Err(ServerFnError::new("Invalid VAPID public key format"));
+    }
+    Ok(key)
 }
 
 /// Save a push subscription for the current user.
@@ -162,6 +175,7 @@ pub async fn save_push_subscription(
 ) -> Result<(), ServerFnError> {
     use crate::server::{auth as auth_mod, db};
 
+    auth_mod::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
     let display_name = auth_mod::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
@@ -190,6 +204,7 @@ pub async fn save_push_subscription(
 pub async fn remove_push_subscription() -> Result<(), ServerFnError> {
     use crate::server::{auth as auth_mod, db};
 
+    auth_mod::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
     let display_name = auth_mod::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 

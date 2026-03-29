@@ -206,7 +206,7 @@ pub fn check_cycle_phase_alert() {
     // Check if already sent a phase alert today
     let already_sent: bool = conn
         .query_row(
-            "SELECT COUNT(*) > 0 FROM notifications WHERE actor = 'cycle-bot' AND module = 'cycle' AND item_text LIKE ?1",
+            "SELECT COUNT(*) > 0 FROM notifications WHERE actor = '_system:cycle' AND module = 'cycle' AND item_text LIKE ?1",
             rusqlite::params![format!("%[{}]%", today_str)],
             |row| row.get(0),
         )
@@ -260,18 +260,18 @@ pub fn check_cycle_phase_alert() {
     };
 
     if let Some(msg) = message {
-        // Use "cycle-bot" as actor — this means it shows up for all other users
+        // Use "_system:cycle" as actor — this means it shows up for all other users
         // (the existing notification system filters out actor == current_user)
         let id = uuid::Uuid::new_v4().to_string();
         let now = chrono::Utc::now().timestamp_millis() as f64;
         let _ = conn.execute(
             "INSERT INTO notifications (id, actor, action, module, item_text, created_at)
-             VALUES (?1, 'cycle-bot', 'alert', 'cycle', ?2, ?3)",
+             VALUES (?1, '_system:cycle', 'alert', 'cycle', ?2, ?3)",
             rusqlite::params![id, msg, now],
         );
 
         // Send push to all opted-in users
-        let subs = load_push_subscriptions("cycle-bot");
+        let subs = load_push_subscriptions("_system:cycle");
         drop(conn);
 
         if !subs.is_empty() {
