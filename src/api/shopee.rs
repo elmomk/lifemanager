@@ -563,12 +563,15 @@ pub async fn add_shopee(
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().timestamp_millis() as f64;
 
+    let display_name = auth::display_name_from_headers(&headers);
     conn.execute(
         "INSERT INTO shopee_packages (id, user_id, title, store, code, due_date, date_is_estimate, picked_up, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8)",
         rusqlite::params![id, user_id, title, store, code, due_date, date_is_estimate as i32, now],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    crate::server::notify::create_notification(&display_name, "added", "shopee", &title);
 
     // Fire-and-forget Google Calendar sync (only for firm deadlines, not estimates)
     if !date_is_estimate {
@@ -593,6 +596,15 @@ pub async fn toggle_shopee(id: String) -> Result<(), ServerFnError> {
     let display_name = auth::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Read current state before toggle for notification
+    let pre: Option<(bool, String)> = conn
+        .query_row(
+            "SELECT picked_up, title FROM shopee_packages WHERE id = ?1 AND user_id = ?2",
+            rusqlite::params![id, user_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .ok();
+
     conn.execute(
         "UPDATE shopee_packages SET picked_up = 1 - picked_up,
          completed_by = CASE WHEN picked_up = 0 THEN ?3 ELSE NULL END
@@ -600,6 +612,11 @@ pub async fn toggle_shopee(id: String) -> Result<(), ServerFnError> {
         rusqlite::params![id, user_id, display_name],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if let Some((was_done, title)) = pre {
+        let action = if was_done { "uncompleted" } else { "completed" };
+        crate::server::notify::create_notification(&display_name, action, "shopee", &title);
+    }
 
     // Fire-and-forget Google Calendar sync
     {
@@ -638,23 +655,29 @@ pub async fn delete_shopee(id: String) -> Result<(), ServerFnError> {
     use crate::server::{auth, db};
 
     let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    let display_name = auth::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // Read google_event_id before deleting
-    let event_id: Option<String> = conn
+    // Read item info before deleting
+    let pre: Option<(String, Option<String>)> = conn
         .query_row(
-            "SELECT google_event_id FROM shopee_packages WHERE id = ?1 AND user_id = ?2",
+            "SELECT title, google_event_id FROM shopee_packages WHERE id = ?1 AND user_id = ?2",
             rusqlite::params![id, user_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
-        .ok()
-        .flatten();
+        .ok();
+
+    let event_id = pre.as_ref().and_then(|(_, eid)| eid.clone());
 
     conn.execute(
         "DELETE FROM shopee_packages WHERE id = ?1 AND user_id = ?2",
         rusqlite::params![id, user_id],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if let Some((title, _)) = pre {
+        crate::server::notify::create_notification(&display_name, "deleted", "shopee", &title);
+    }
 
     // Fire-and-forget: delete Calendar event
     if let Some(eid) = event_id {

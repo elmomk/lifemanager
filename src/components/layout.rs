@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 
 use crate::cache::SyncStatus;
+use crate::components::notification_bell::NotificationBell;
 use crate::components::sync_indicator::SyncIndicator;
 use crate::components::tab_bar::TabBar;
 use crate::route::Route;
@@ -31,12 +32,15 @@ pub fn AppLayout() -> Element {
             header { class: "fixed top-0 left-0 right-0 z-50 bg-cyber-dark/90 backdrop-blur-lg border-b border-neon-cyan/20",
                 div { class: "flex items-center justify-between h-14 px-4 max-w-lg mx-auto",
                     h1 { class: "text-sm font-bold tracking-[0.2em] text-neon-cyan text-glow-cyan", "{title}" }
-                    SyncIndicator {
-                        status: sync_status,
-                        on_sync: move |_| {
-                            let cur = sync_trigger.read().0;
-                            sync_trigger.set(SyncTrigger(cur + 1));
-                        },
+                    div { class: "flex items-center gap-1",
+                        NotificationBell {}
+                        SyncIndicator {
+                            status: sync_status,
+                            on_sync: move |_| {
+                                let cur = sync_trigger.read().0;
+                                sync_trigger.set(SyncTrigger(cur + 1));
+                            },
+                        }
                     }
                 }
             }

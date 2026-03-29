@@ -116,7 +116,34 @@ pub fn init() {
             created_at REAL NOT NULL
         );
         CREATE UNIQUE INDEX IF NOT EXISTS idx_mood_user_date ON mood_logs(user_id, date);
-        CREATE INDEX IF NOT EXISTS idx_mood_user ON mood_logs(user_id);"
+        CREATE INDEX IF NOT EXISTS idx_mood_user ON mood_logs(user_id);
+        CREATE TABLE IF NOT EXISTS notifications (
+            id TEXT PRIMARY KEY,
+            actor TEXT NOT NULL,
+            action TEXT NOT NULL,
+            module TEXT NOT NULL,
+            item_text TEXT NOT NULL,
+            created_at REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_notif_created ON notifications(created_at);
+        CREATE TABLE IF NOT EXISTS notification_reads (
+            user_name TEXT PRIMARY KEY,
+            last_read_at REAL NOT NULL DEFAULT 0,
+            cleared_at REAL NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS notification_settings (
+            user_name TEXT PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id TEXT PRIMARY KEY,
+            user_name TEXT NOT NULL,
+            endpoint TEXT NOT NULL,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            created_at REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions(user_name);"
     )
     .expect("Failed to run migrations");
 
@@ -200,6 +227,18 @@ pub fn init() {
     run_once(&conn, "watch_cartoon_to_series",
         "UPDATE watch_items SET media_type = 'Series' WHERE media_type = 'Cartoon';"
     );
+
+    // Add cleared_at column to notification_reads
+    for sql in [
+        "ALTER TABLE notification_reads ADD COLUMN cleared_at REAL NOT NULL DEFAULT 0",
+    ] {
+        if let Err(e) = conn.execute_batch(sql) {
+            let msg = e.to_string();
+            if !msg.contains("duplicate column") {
+                eprintln!("WARNING: migration failed: {msg}");
+            }
+        }
+    }
 
     // One-time migration: consolidate all users to 'default'
     run_once(&conn, "consolidate_users",

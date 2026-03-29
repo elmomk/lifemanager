@@ -24,6 +24,8 @@ services:
       - GOOGLE_SA_KEY_FILE=/app/gorilla-coach-sheets-key.json
       - GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID:-primary}
       - TMDB_API_KEY=${TMDB_API_KEY}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY}
     volumes:
       - app-data:/app/data
       - ./gorilla-coach-sheets-key.json:/app/gorilla-coach-sheets-key.json:ro

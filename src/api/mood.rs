@@ -29,6 +29,8 @@ pub async fn log_mood(
         .unwrap()
         .as_secs_f64();
 
+    let display_name = auth::display_name_from_headers(&headers);
+
     conn.execute(
         "INSERT INTO mood_logs (id, user_id, date, mood, energy, libido, notes, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
@@ -41,6 +43,24 @@ pub async fn log_mood(
         rusqlite::params![id, user_id, date, mood, energy, libido, notes, now],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // Notify other users if mood/energy is low
+    if mood <= 2 && energy <= 2 {
+        crate::server::notify::create_notification(
+            &display_name, "is not feeling great", "cycle",
+            "low mood & energy today",
+        );
+    } else if mood <= 2 {
+        crate::server::notify::create_notification(
+            &display_name, "checked in", "cycle",
+            "mood is low today",
+        );
+    } else if energy <= 2 {
+        crate::server::notify::create_notification(
+            &display_name, "checked in", "cycle",
+            "energy is low today",
+        );
+    }
 
     Ok(())
 }

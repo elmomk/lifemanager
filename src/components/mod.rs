@@ -9,3 +9,4 @@ pub mod checklist_page;
 pub mod sync_indicator;
 pub mod google_sync;
 pub mod progress_bar;
+pub mod notification_bell;

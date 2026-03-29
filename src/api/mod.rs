@@ -5,3 +5,4 @@ pub mod watchlist;
 pub mod cycles;
 pub mod mood;
 pub mod google;
+pub mod notifications;

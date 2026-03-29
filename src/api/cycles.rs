@@ -41,6 +41,9 @@ pub async fn list_cycles() -> Result<Vec<Cycle>, ServerFnError> {
         cycles.push(Cycle { id, start_date, end_date, symptoms });
     }
 
+    // Fire-and-forget: check if cycle phase warrants an alert to subscribers
+    crate::server::notify::check_cycle_phase_alert();
+
     Ok(cycles)
 }
 

@@ -115,12 +115,15 @@ pub async fn add_watchlist(text: String, media_type: MediaType) -> Result<String
     let mt_str = media_type.label();
     let now = chrono::Utc::now().timestamp_millis() as f64;
 
+    let display_name = auth::display_name_from_headers(&headers);
     conn.execute(
         "INSERT INTO watch_items (id, user_id, text, media_type, done, status, created_at)
          VALUES (?1, ?2, ?3, ?4, 0, 'unwatched', ?5)",
         rusqlite::params![id, user_id, text, mt_str, now],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    crate::server::notify::create_notification(&display_name, "added", "watchlist", &text);
 
     Ok(id)
 }
@@ -133,6 +136,15 @@ pub async fn toggle_watchlist(id: String) -> Result<(), ServerFnError> {
     let display_name = auth::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Read current state before toggle for notification
+    let pre: Option<(bool, String)> = conn
+        .query_row(
+            "SELECT done, text FROM watch_items WHERE id = ?1 AND user_id = ?2",
+            rusqlite::params![id, user_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .ok();
+
     conn.execute(
         "UPDATE watch_items SET
          done = 1 - done,
@@ -143,6 +155,11 @@ pub async fn toggle_watchlist(id: String) -> Result<(), ServerFnError> {
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    if let Some((was_done, text)) = pre {
+        let action = if was_done { "uncompleted" } else { "completed" };
+        crate::server::notify::create_notification(&display_name, action, "watchlist", &text);
+    }
+
     Ok(())
 }
 
@@ -151,13 +168,27 @@ pub async fn delete_watchlist(id: String) -> Result<(), ServerFnError> {
     use crate::server::{auth, db};
 
     let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    let display_name = auth::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    // Read text before deleting for notification
+    let item_text: Option<String> = conn
+        .query_row(
+            "SELECT text FROM watch_items WHERE id = ?1 AND user_id = ?2",
+            rusqlite::params![id, user_id],
+            |row| row.get(0),
+        )
+        .ok();
 
     conn.execute(
         "DELETE FROM watch_items WHERE id = ?1 AND user_id = ?2",
         rusqlite::params![id, user_id],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if let Some(text) = item_text {
+        crate::server::notify::create_notification(&display_name, "deleted", "watchlist", &text);
+    }
 
     Ok(())
 }

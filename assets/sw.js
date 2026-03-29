@@ -47,3 +47,41 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
+
+// Web Push: show notification when push event arrives
+self.addEventListener('push', (event) => {
+  let data = { title: 'Life Manager', body: 'New activity', module: '' };
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data.body = event.data.text();
+    }
+  }
+
+  const options = {
+    body: data.body,
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    tag: 'life-manager-' + (data.module || 'general'),
+    renotify: true,
+    data: { url: '/' },
+  };
+
+  event.waitUntil(self.registration.showNotification(data.title, options));
+});
+
+// Open app when notification is clicked
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      for (const client of windowClients) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      return clients.openWindow('/');
+    })
+  );
+});

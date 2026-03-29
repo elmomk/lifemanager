@@ -61,12 +61,15 @@ pub async fn add_checklist(
     let cat_str = category.to_string();
     let now = chrono::Utc::now().timestamp_millis() as f64;
 
+    let display_name = auth::display_name_from_headers(&headers);
     conn.execute(
         "INSERT INTO checklist_items (id, user_id, text, date, done, category, created_at)
          VALUES (?1, ?2, ?3, ?4, 0, ?5, ?6)",
         rusqlite::params![id, user_id, text, date, cat_str, now],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    crate::server::notify::create_notification(&display_name, "added", &cat_str.to_lowercase(), &text);
 
     // Fire-and-forget Google Calendar sync
     {
@@ -91,6 +94,15 @@ pub async fn toggle_checklist(id: String) -> Result<(), ServerFnError> {
     let display_name = auth::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
+    // Read current state before toggle for notification
+    let pre: Option<(bool, String, String)> = conn
+        .query_row(
+            "SELECT done, text, category FROM checklist_items WHERE id = ?1 AND user_id = ?2",
+            rusqlite::params![id, user_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .ok();
+
     conn.execute(
         "UPDATE checklist_items SET done = 1 - done,
          completed_by = CASE WHEN done = 0 THEN ?3 ELSE NULL END
@@ -98,6 +110,11 @@ pub async fn toggle_checklist(id: String) -> Result<(), ServerFnError> {
         rusqlite::params![id, user_id, display_name],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if let Some((was_done, text, category)) = pre {
+        let action = if was_done { "uncompleted" } else { "completed" };
+        crate::server::notify::create_notification(&display_name, action, &category.to_lowercase(), &text);
+    }
 
     // Fire-and-forget Google Calendar sync
     {
@@ -133,23 +150,29 @@ pub async fn delete_checklist(id: String) -> Result<(), ServerFnError> {
     use crate::server::{auth, db};
 
     let user_id = auth::user_from_headers(&headers).map_err(|e| ServerFnError::new(e))?;
+    let display_name = auth::display_name_from_headers(&headers);
     let conn = db::pool().get().map_err(|e| ServerFnError::new(e.to_string()))?;
 
-    // Read google_event_id before deleting
-    let event_id: Option<String> = conn
+    // Read item info before deleting
+    let pre: Option<(String, String, Option<String>)> = conn
         .query_row(
-            "SELECT google_event_id FROM checklist_items WHERE id = ?1 AND user_id = ?2",
+            "SELECT text, category, google_event_id FROM checklist_items WHERE id = ?1 AND user_id = ?2",
             rusqlite::params![id, user_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
-        .ok()
-        .flatten();
+        .ok();
+
+    let event_id = pre.as_ref().and_then(|(_, _, eid)| eid.clone());
 
     conn.execute(
         "DELETE FROM checklist_items WHERE id = ?1 AND user_id = ?2",
         rusqlite::params![id, user_id],
     )
     .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    if let Some((text, category, _)) = pre {
+        crate::server::notify::create_notification(&display_name, "deleted", &category.to_lowercase(), &text);
+    }
 
     // Fire-and-forget: delete Calendar event
     if let Some(eid) = event_id {
